@@ -5,7 +5,12 @@ bitboard expectimax engine with a compact line-pattern evaluation, shipped both
 as a Windows desktop app and as a browser build that runs the same search in
 WebAssembly across a pool of Web Workers.
 
-![The web build after the AI reached 32768](docs/screenshot.jpg)
+<p align="center">
+  <img src="docs/screenshot-32768.jpg" width="46%" alt="The board right after the AI built the 32768 tile, score 452,832">
+  <img src="docs/screenshot-32768-overlay.jpg" width="46%" alt="The win overlay: 32768 reached">
+</p>
+
+<p align="center"><sub>WebView2 build, 8x speed: the AI builds the 32768 tile at a score of 452,832, then offers to keep going.</sub></p>
 
 ## Two builds, one engine
 

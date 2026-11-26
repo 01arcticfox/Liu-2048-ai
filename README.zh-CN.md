@@ -3,7 +3,12 @@
 一个会玩 2048 的求解器：位棋盘 expectimax 搜索 + 紧凑的线型模式评估，既有 Windows
 桌面版，也有把同一套搜索放进 WebAssembly、用多个 Web Worker 并行跑的网页版。
 
-![网页版在 AI 合出 32768 之后](docs/screenshot.jpg)
+<p align="center">
+  <img src="docs/screenshot-32768.jpg" width="46%" alt="AI 刚合出 32768 瓦片时的盘面，得分 452,832">
+  <img src="docs/screenshot-32768-overlay.jpg" width="46%" alt="达成 32768 的提示层">
+</p>
+
+<p align="center"><sub>WebView2 版、8 倍速：AI 在 452,832 分时合出 32768（2^15），然后询问是否继续。</sub></p>
 
 ## 两个版本，同一套引擎
 
