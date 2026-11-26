@@ -6,7 +6,7 @@
   const VEC = { 0: [-1, 0], 1: [0, 1], 2: [1, 0], 3: [0, -1] }; // 0 up, 1 right, 2 down, 3 left
   const DIR_GLYPH = { 0: '↑', 1: '→', 2: '↓', 3: '←' };
   const DIR_ROT = { 0: -90, 1: 0, 2: 90, 3: 180 };
-  const STORE = { best: 'b2048.best', lang: 'b2048.lang', theme: 'b2048.theme', speed: 'b2048.speed' };
+  const STORE = { best: 'b2048.best', lang: 'b2048.lang', theme: 'b2048.theme', speed: 'b2048.speed', save: 'b2048.save' };
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -32,16 +32,16 @@
     zh: {
       sub: 'Bitboard 期望搜索 · 目标 2<sup>15</sup> = 32768',
       score: '得分', best: '最高',
-      newGame: '新游戏', auto: 'AI 自动', hint: 'AI 提示', undo: '撤销',
+      restart: '重新开始', auto: 'AI 自动', hint: 'AI 提示',
       tips: 'WASD / 方向键 · 鼠标拖拽 · 触屏滑动',
       idle: 'AI 待机', thinking: 'AI 思考中…', analyzing: 'AI 分析中…', running: 'AI 自动运行',
       suggest: '建议', evalNone: '评估 —', evalWord: '评估', maxPrefix: '最大',
       noMove: '无可行方向', ended: '已结束', browserOnly: '浏览器预览模式',
       needDesktop: 'AI 引擎需要桌面版（WebView2）运行',
       noUndo: '没有可撤销的步骤', undone: '已撤销', stuck: 'AI 无法继续',
-      over: 'GAME OVER', again: '再来一局',
+      over: 'GAME OVER', again: '确定',
       overText: (m, s) => `最大方块 ${m} · 得分 ${s}`,
-      win: '32768 达成', winBtn: '继续挑战',
+      win: '32768 达成', winBtn: '确定',
       winText: '已经拼出 2¹⁵，继续冲击 2¹⁶？',
       toLight: '切换浅色主题', toDark: '切换深色主题', langTitle: 'Switch to English',
       speedTitle: 'AI 速度',
@@ -49,16 +49,16 @@
     en: {
       sub: 'Bitboard expectimax · target 2<sup>15</sup> = 32768',
       score: 'Score', best: 'Best',
-      newGame: 'New Game', auto: 'Auto AI', hint: 'Hint', undo: 'Undo',
+      restart: 'Restart', auto: 'Auto AI', hint: 'Hint',
       tips: 'WASD / Arrows · Drag · Swipe',
       idle: 'AI idle', thinking: 'Thinking…', analyzing: 'Analyzing…', running: 'Auto running',
       suggest: 'Suggest', evalNone: 'Eval —', evalWord: 'Eval', maxPrefix: 'Max',
       noMove: 'No moves', ended: 'Finished', browserOnly: 'Browser preview',
       needDesktop: 'AI engine runs in the desktop app (WebView2)',
       noUndo: 'Nothing to undo', undone: 'Undone', stuck: 'AI stalled',
-      over: 'GAME OVER', again: 'Play Again',
+      over: 'GAME OVER', again: 'OK',
       overText: (m, s) => `Max tile ${m} · Score ${s}`,
-      win: '32768 Reached', winBtn: 'Keep going',
+      win: '32768 Reached', winBtn: 'OK',
       winText: 'The AI built 2¹⁵ — go for 2¹⁶?',
       toLight: 'Light theme', toDark: 'Dark theme', langTitle: '切换到中文',
       speedTitle: 'AI speed',
@@ -462,6 +462,7 @@
   function finishTurn() {
     const vals = values();
     const maxTile = maxOf(vals);
+    saveState();
 
     if (maxTile >= 32768 && !reachedGoal) {
       reachedGoal = true;
@@ -698,19 +699,12 @@
     });
   }
 
-  $('#undoBtn').addEventListener('click', () => {
-    if (!history.length) { toast(t('noUndo')); return; }
-    if (autoOn) setAuto(false);
-    restore(history.pop());
-    toast(t('undone'));
-  });
-
   overlay.addEventListener('pointerdown', (e) => e.stopPropagation());
 
-  $('#ovBtn').addEventListener('click', () => {
-    if (gameOver) { startGame(); return; }
-    hideOverlay();
-  });
+  // Dismiss only. The finished board is what the player just achieved, so the
+  // overlay closes over it instead of throwing it away; a new game is one press
+  // of Restart.
+  $('#ovBtn').addEventListener('click', () => hideOverlay());
 
   langBtn.addEventListener('click', () => {
     lang = lang === 'zh' ? 'en' : 'zh';
@@ -730,6 +724,41 @@
     applyTheme();
   });
 
+  /* ------------------------------------------------ persistence */
+  // The board, the score and whether the game had ended are written after every
+  // settled move, so closing the tab or the app and coming back shows exactly the
+  // position that was on screen - not a fresh game.
+  function saveState() {
+    try {
+      localStorage.setItem(STORE.save, JSON.stringify({
+        vals: values(), score, gameOver, reachedGoal,
+      }));
+    } catch {
+      /* private mode: keep playing, just without a saved game */
+    }
+  }
+
+  function restoreSaved() {
+    let saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(STORE.save) || 'null');
+    } catch {
+      return false;
+    }
+    if (!saved || !Array.isArray(saved.vals) || saved.vals.length !== 16) return false;
+    if (!saved.vals.some((v) => v > 0)) return false;
+    restore({ vals: saved.vals, score: saved.score | 0 });
+    gameOver = !!saved.gameOver;
+    reachedGoal = !!saved.reachedGoal;
+    if (gameOver) {
+      ui.overlay = { kind: 'over', max: maxOf(values()), score };
+      overlay.hidden = false;
+      renderOverlay();
+      setAi('ended', 'off');
+    }
+    return true;
+  }
+
   /* ------------------------------------------------ startup */
   function startGame() {
     post('NEW');
@@ -748,6 +777,7 @@
     spawnRandom();
     spawnRandom();
     updateScore(false);
+    saveState();
   }
 
   // The browser build starts at 4x: the search now answers in about 27 ms, and at
@@ -761,7 +791,7 @@
 
   buildGrid();
   layout();
-  startGame();
+  if (!restoreSaved()) startGame();
   new ResizeObserver(layout).observe(boardEl);
   applyLang();
   if (!bridge()) setAi('browserOnly', 'off');
