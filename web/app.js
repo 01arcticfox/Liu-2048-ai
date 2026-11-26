@@ -750,7 +750,13 @@
     updateScore(false);
   }
 
-  speedIdx = Math.min(SPEEDS.length - 1, Math.max(0, Number(localStorage.getItem(STORE.speed) || 0)));
+  // The browser build starts at 4x: the search now answers in about 27 ms, and at
+  // 1x the board animation, not the engine, sets the pace. A stored preference
+  // still wins.
+  const savedSpeed = localStorage.getItem(STORE.speed);
+  speedIdx = savedSpeed === null
+    ? 2
+    : Math.min(SPEEDS.length - 1, Math.max(0, Number(savedSpeed) || 0));
   applySpeed(false);
 
   buildGrid();

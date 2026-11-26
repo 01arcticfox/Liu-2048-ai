@@ -11,7 +11,7 @@
 
 (function (global) {
   const MAX_WORKERS = 16;
-  const VERSION = '5';          // bump together with index.html to defeat caches
+  const VERSION = '6';          // bump together with index.html to defeat caches
   const query = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 
   let workers = [];
