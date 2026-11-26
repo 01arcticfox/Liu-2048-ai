@@ -4,7 +4,7 @@
 // a per-line heuristic table, and a transposition table that accepts entries
 // searched at least as deep as the request. Boards are four 16-bit rows, each
 // row holding four 4-bit tile ranks, so a move is four table lookups.
-
+//
 // ---------------------------------------------------------------- constants
 
 const ROWS: i32 = 4;
