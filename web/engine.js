@@ -38,11 +38,16 @@
   const DEPTH_MIN = 3;
   const DEPTH_MAX = 6;
 
-  // The speed button doubles as a quality switch: the page lowers the ceiling
-  // and the crowded-board threshold when the player asks for eight moves a
-  // second, and raises both when the player is watching at 1x.
+  // Depth policy: four plies while the board is open, five once it is crowded.
+  // The page sets this once (see applySpeed) and the speed button no longer
+  // touches it - capping depth at 8x made the fastest setting the weakest.
   let depthCap = 5;
   let endgameFree = 5;
+
+  const qCapRaw = query.get('cap');
+  const qFreeRaw = query.get('endfree');
+  if (qCapRaw !== null) depthCap = Math.max(DEPTH_MIN, Math.min(Number(qCapRaw) | 0, DEPTH_MAX));
+  if (qFreeRaw !== null) endgameFree = Math.max(0, Math.min(Number(qFreeRaw) | 0, 15));
 
   const forcedDepth = Number(query.get('depth') || 0);
   if (forcedDepth > 0) depth = Math.max(DEPTH_MIN, Math.min(DEPTH_MAX, forcedDepth | 0));

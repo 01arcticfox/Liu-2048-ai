@@ -126,15 +126,12 @@
     // eight moves a second legible while the board stays ahead of the hand.
     moveMsNow = Math.max(12, Math.round(112 / SPEEDS[speedIdx]));
 
-    // The button is a quality switch as well as a pace switch. 8x plays as fast
-    // as the pool can answer, so it never buys the fifth ply; 1x and 2x are for
-    // watching, and spend the extra time on depth.
+    // The button changes the pace of the slides only. It used to cap the search
+    // as well - 8x played at four plies with no fifth ply in the endgame - which
+    // made the strongest-looking setting the weakest player. Depth is a property
+    // of the position, not of how fast the tiles are drawn.
     const engine = window.LiuEngine;
-    if (engine && engine.setTuning) {
-      const fast = speedIdx >= 3;
-      const slow = speedIdx <= 1;
-      engine.setTuning(fast ? 4 : 5, fast ? 0 : slow ? 7 : 5);
-    }
+    if (engine && engine.setTuning) engine.setTuning(5, 5);
 
     speedBtn.textContent = SPEEDS[speedIdx] + 'x';
     speedBtn.title = t('speedTitle') + ' · ' + SPEEDS[speedIdx] + 'x';
