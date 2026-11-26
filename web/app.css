@@ -347,8 +347,6 @@ html[data-theme="light"] .o2, html[data-theme="light"] .o3 { opacity: 0.26; }
 
 .tiles { z-index: 2; }
 
-.board.no-anim .tile { transition: none; }
-
 /* Resize suppression. Dragging a window edge re-rasterises every tile, gradient
    and shadow on each frame. For the duration of the drag the expensive paint
    work is dropped: geometry stays exact, and everything comes back the moment
@@ -483,14 +481,10 @@ html[data-theme="light"] .tile-inner[data-v="4"] { border-color: rgba(60, 110, 1
   62%  { transform: scale(1.04); opacity: 1; }
   100% { transform: scale(1); opacity: 1; }
 }
-@keyframes tile-merge {
-  0%   { transform: scale(1); }
-  42%  { transform: scale(1.19); }
-  100% { transform: scale(1); }
-}
 
+/* The merge pop lives in app.js as a web animation: restarting it via a class
+   costs a forced reflow per merged tile, which matters at eight moves a second. */
 .tile-inner.appear { animation: tile-appear 190ms cubic-bezier(0.2, 0.8, 0.3, 1.1) both; }
-.tile-inner.pop    { animation: tile-merge 200ms cubic-bezier(0.24, 0.9, 0.32, 1.3); }
 
 /* ------------------------------------------------ hint arrow */
 .hint {

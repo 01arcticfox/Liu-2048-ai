@@ -106,7 +106,10 @@
   let moveMsNow = 130;
 
   function applySpeed(save) {
-    moveMsNow = Math.max(12, Math.round(130 / SPEEDS[speedIdx]));
+    // 112 ms base instead of 130: at the default 4x a slide now runs 28 ms, which
+    // keeps four to eight moves a second legible while the board stays ahead of
+    // the hand. 1x is still a deliberate, watchable 112 ms.
+    moveMsNow = Math.max(12, Math.round(112 / SPEEDS[speedIdx]));
     // Scoped to the board instead of :root. A custom property on the document
     // element invalidates style for the entire tree, and the speed is only read
     // by the tiles anyway.
@@ -227,6 +230,9 @@
     if (!w) return;
     const gap = w < 360 ? 8 : w < 430 ? 10 : 12;
     const cell = (w - 5 * gap) / 4;
+    // Cached for pointermove: reading clientWidth from a movement handler forces
+    // a synchronous layout on every sampled touch point.
+    swipePx = Math.max(12, Math.min(26, w * 0.038));
     // A custom property on the board invalidates style for all sixteen cells
     // and every tile below it, so only write when the numbers really changed.
     if (Math.abs(cell - lastCell) < 0.5 && gap === lastGap) return;
@@ -292,13 +298,13 @@
     tile.el.style.setProperty('--c', tile.col);
   }
 
-  function paint(tile, anim, restart) {
+  function paint(tile, anim) {
     const v = tile.value;
     const digits = String(v);
     const inner = tile.inner;
 
     // Writing the same text and attributes again still costs a style pass on the
-    // tile, and most repaints here are a pop on an unchanged value.
+    // tile, and most repaints here land on an unchanged value.
     if (inner.dataset.v !== digits) {
       inner.dataset.v = v;
       inner.dataset.len = digits.length;
@@ -311,10 +317,9 @@
       }
     }
     if (anim) {
-      inner.classList.remove('appear', 'pop');
       // A freshly inserted element runs its animation from the first style
-      // calculation anyway; only a repeat needs a forced reflow to restart it.
-      if (restart) void inner.offsetWidth;
+      // calculation, so this never needs a forced reflow.
+      inner.classList.remove('appear');
       inner.classList.add(anim);
     }
   }
@@ -399,9 +404,9 @@
     ui.maxTile = maxV;
     renderStatus();
 
-    if (pop) {
-      scoreBox.classList.remove('pop');
-      void scoreBox.offsetWidth;
+    if (pop && !scoreBox.classList.contains('pop')) {
+      // Restarting the class animation would need a forced reflow on every move;
+      // a pop that is already running is left alone instead.
       scoreBox.classList.add('pop');
       clearTimeout(popTimer);
       popTimer = setTimeout(() => scoreBox.classList.remove('pop'), 220);
@@ -410,6 +415,16 @@
 
   /* ------------------------------------------------ moves */
   const snapshot = () => ({ vals: values(), score });
+
+  // The merge pop, expressed as a web animation instead of a CSS class. Same
+  // shape as the old .pop keyframes, but animate() replaces a running animation
+  // on its own, so no forced reflow is needed to restart it.
+  const MERGE_POP = [
+    { transform: 'scale(1)' },
+    { transform: 'scale(1.19)', offset: 0.42 },
+    { transform: 'scale(1)' },
+  ];
+  const MERGE_POP_TIMING = { duration: 200, easing: 'cubic-bezier(0.24, 0.9, 0.32, 1.3)' };
 
   // A move is settled in two stages: the tiles start sliding at once, and the
   // merge, the score and the new tile land a few dozen milliseconds later. That
@@ -431,7 +446,14 @@
       tiles.delete(m.victim.id);
     }
     for (const tile of tiles.values()) tile.mergedNow = false;
-    for (const m of s.merges) paint(m.target, 'pop', true);
+    // Value first, then the pop through the Web Animations API. Restarting a CSS
+    // animation needs a forced reflow (void offsetWidth) per merged tile, and at
+    // eight moves a second that reflow lands right when the next slide wants to
+    // start. animate() replaces the running animation without touching style.
+    for (const m of s.merges) {
+      paint(m.target, null, false);
+      m.target.inner.animate(MERGE_POP, MERGE_POP_TIMING);
+    }
 
     score += s.gained;
     updateScore(true);
@@ -541,9 +563,9 @@
     for (const tile of tiles.values()) place(tile);
 
     const step = { token: ++token, merges, gained, done: false, timer: 0 };
-    // The extra frame lets the browser commit the start positions before the
+    // The small buffer lets the browser commit the start positions before the
     // merge lands; without it a very short slide can be skipped entirely.
-    step.timer = setTimeout(() => settleStep(step), moveMsNow + 16);
+    step.timer = setTimeout(() => settleStep(step), moveMsNow + 10);
     pendingStep = step;
 
     return true;
@@ -711,11 +733,17 @@
     doMove(dir);
   });
 
-  // Swipe: as soon as the finger (or the mouse) has travelled far enough to name
-  // a direction, the move fires - no need to lift. The drag is then dropped, so
-  // one gesture produces exactly one move however long the finger stays down.
+  // Swipe: the move fires as soon as the finger has travelled far enough to name
+  // a direction. The gesture is then re-armed at the current point instead of
+  // being dropped, so a thumb that keeps travelling - or turns without lifting -
+  // can fire the next move. Fast mobile play is exactly that: several moves
+  // inside one press, which used to be impossible because only the first swipe
+  // of a press counted. A short cooldown keeps one long drag from firing on every
+  // sampled frame, and the travel is measured against a cached slop so
+  // pointermove never touches layout.
   let drag = null;
-  const swipeSlop = () => Math.max(14, Math.min(30, boardEl.clientWidth * 0.045));
+  let swipePx = 18;
+  let lastSwipeAt = 0;
 
   boardEl.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
@@ -728,8 +756,12 @@
     const dx = e.clientX - drag.x;
     const dy = e.clientY - drag.y;
     const ax = Math.abs(dx), ay = Math.abs(dy);
-    if (Math.max(ax, ay) < swipeSlop()) return;
-    drag = null;
+    if (Math.max(ax, ay) < swipePx) return;
+    const now = performance.now();
+    if (now - lastSwipeAt < 70) return;   // still the same flick, not a new move
+    lastSwipeAt = now;
+    drag.x = e.clientX;
+    drag.y = e.clientY;
     if (ax > ay) doMove(dx > 0 ? 1 : 3);
     else doMove(dy > 0 ? 2 : 0);
   });
