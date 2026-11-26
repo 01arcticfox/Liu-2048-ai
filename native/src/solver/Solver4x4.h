@@ -302,6 +302,9 @@ public:
 	void setTtDeep(bool on) { std::lock_guard<std::mutex> lk(m_mutex); m_ttDeep = on; }
 	void setTtWays(int n)   { std::lock_guard<std::mutex> lk(m_mutex); m_ttWays = (n >= 2 ? 2 : 1); }
 	void setTtSlack(int n)  { std::lock_guard<std::mutex> lk(m_mutex); m_ttSlack = std::clamp(n, 0, 3); }
+	// 0 = always overwrite a foreign slot, 1 = keep a foreign slot that is more
+	// than two plies deeper than the value being stored.
+	void setTtPolicy(int n) { std::lock_guard<std::mutex> lk(m_mutex); m_ttPolicy = (n == 1) ? 1 : 0; }
 
 	// Attach a trained n-tuple network; nullptr puts the analytic heuristic back.
 	void setNet(nt::Net* n) { std::lock_guard<std::mutex> lk(m_mutex); m_net = n; }
@@ -969,6 +972,11 @@ private:
 			const std::size_t i = hashBits(board, m_cache->bits);
 			const Slot old = loadSlot(i);
 			if (old.key == k && old.depth >= (uint32_t)depth) return;
+			// Depth-preferred replacement: a slot holding a much deeper value is
+			// worth more than the shallow value being stored, because only a deep
+			// entry can answer a deep query. The two-ply slack keeps the table
+			// from freezing on one move's deep entries.
+			if (m_ttPolicy == 1 && old.key != k && (int)old.depth > (int)depth + 1) return;
 			storeSlot(i, v);
 			return;
 		}
@@ -1126,6 +1134,7 @@ private:
 	bool  m_ttDeep      = true;
 	int   m_ttWays      = 1;    // slots per hash bucket; 2 measured no gain
 	int   m_ttSlack     = 0;    // accept entries up to N plies shallower
+	int   m_ttPolicy    = 0;    // 0 = overwrite, 1 = keep a much deeper foreign slot
 	nt::Net* m_net      = nullptr;   // non-null: score with the trained network
 
 	std::mutex m_mutex;

@@ -47,6 +47,21 @@ midgame depth almost unchanged while pushing the endgame one ply deeper, and
 that costs 2.5x the time for less strength. Measured at the same seeds: 2^19
 5/8, 2^21 7/8, 1.5x 4/8, 2^22 5/8.
 
+Everything else in the search was measured the same way, and at this point most
+of it does not pay - the engine sits at a local optimum for this evaluation:
+
+| Change | Measured on the 32768 position | Result |
+|---|---|---|
+| table 2^20 / 2^21 / 2^22 | 200 moves, 16 workers | 10% fewer nodes with one worker, 2% slower with sixteen |
+| depth-preferred replacement | 200 moves, 1 worker | 11% more nodes, hit rate 73% -> 70% |
+| two slots per bucket | same | neutral (71.5% hit rate) |
+| node budget instead of the probe | same | 2x the nodes for +0.3 ply, identical play |
+| one extra ply at three free cells | same | 2.6x the time for the same score |
+| reusing the probe depth for 3-6 moves | same | 0.4 s saved per 200 moves, but nodes rise whenever a merge opens the board |
+
+Only two settings moved the result: formation pruning off (+14 points of 32768
+rate) and 2^21 instead of 2^19 (+12 points). Both are defaults.
+
 The browser build runs the same search on up to sixteen workers: about 27 ms per
 move at four plies, which plays at roughly nine moves per second at 8x playback.
 One more ply costs thirteen times as much there, so the open board stays at four

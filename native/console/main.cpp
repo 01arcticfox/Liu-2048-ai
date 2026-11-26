@@ -100,7 +100,7 @@ struct Options {
     int           fixedDepth = 0;   // > 0: search exactly this depth
     int           hashBits   = 0;   // 0 = pick from the core count
     int           probeBits  = 0;   // 0 = default depth probe cap
-    int           probeEvery = 6;   // recompute the depth probe every N moves
+    int           probeEvery = 1;   // 1 = probe every move; >1 reuses the depth while the board keeps filling
     int           maxDepth   = 0;   // 0 = no cap, else hard ceiling on plies
     int           capBoost   = 0;   // added to the free-cell depth caps
     int           dangerDepth = 0;  // > 0: minimum depth at <= 2 free cells
@@ -109,6 +109,8 @@ struct Options {
     int           perCache   = 0;   // 1 = every worker gets its own table (no sharing)
     int           ttWays     = 1;   // slots per hash bucket (2 measured no gain)
     int           ttSlack    = 0;   // accept TT entries up to N plies shallower
+    int           ttPolicy   = 0;   // 0 = overwrite, 1 = keep much deeper foreign slot
+    long long     maxMoves   = 0;   // > 0: stop a headless game after N moves
     int           ph2Free    = 0;   // phase-2 weight set: free-cell threshold (0 = off)
     float         ph2W[4]    = {270, 700, 47, 11};
     int           endBoost   = 0;   // extra plies on crowded boards (0 = off)
@@ -651,7 +653,7 @@ struct Choice {
 struct Engine {
     int fixedDepth = 0;   // > 0: score exactly this depth, no probing
     int threads    = 1;
-    int probeEvery = 6;   // recompute the depth probe every N moves
+    int probeEvery = 1;   // 1 = probe every move (exact); >1 reuses the depth for a few moves
     int maxDepth   = 0;   // 0 = no ceiling on plies
     int capBoost   = 0;   // added to every free-cell depth cap (see chooseMove)
     int dangerDepth = 0;  // > 0: minimum depth once <= 2 cells are free
@@ -894,15 +896,28 @@ Choice chooseMove(Workers& w, const Board& b, const Engine& eng, DepthCache& dc)
     if (eng.fixedDepth > 0) {
         scoreAtDepth(std::min(eng.fixedDepth, 14));
     } else if (eng.moveNodes == 0) {
-        int depth = pool0.searchDepth(mat);
+        // The probe is serial and costs 7 ms a move, which is a fifth of the wall
+        // clock once sixteen workers are running: parallel work shrinks, the
+        // probe does not. Its answer drifts slowly and only downwards as the
+        // board fills, so it is reused for a few moves and recomputed as soon as
+        // a merge opens the board up again.
+        const bool reuse = eng.probeEvery > 0 && dc.atMove >= 0
+                           && (b.moves - dc.atMove) < eng.probeEvery
+                           && freeCount <= dc.free0;
+        int depth;
+        if (reuse) {
+            depth = dc.depth;
+        } else {
+            depth = pool0.searchDepth(mat);
+            dc.depth  = depth;
+            dc.atMove = b.moves;
+            dc.free0  = freeCount;
+        }
         // Crowded boards are where every game is decided, and there the tree is
         // small: the probe already asks for 6-8 plies, but plain extra plies are
         // cheap there, so buy a couple more exactly where it matters.
         if (eng.endBoost > 0 && freeCount <= eng.endFree)
             depth = std::min(depth + eng.endBoost, 14);
-        dc.depth  = depth;
-        dc.atMove = b.moves;
-        dc.free0  = freeCount;
         if (eng.maxDepth > 0) depth = std::min(depth, eng.maxDepth);
         scoreAtDepth(depth);
     } else {
@@ -1919,6 +1934,7 @@ GameResult playHeadless(Workers& workers, const Options& opt, std::uint64_t seed
     if (opt.show) std::fputs("\x1b[2J\x1b[?25l", stdout);
 
     while (!s.over) {
+        if (opt.maxMoves > 0 && (long long)s.b.moves >= opt.maxMoves) break;
         if (std::getenv("G2048_DEBUG") && s.b.moves % 10 == 0)
             std::fprintf(stderr, "  [dbg] move %d max %d\n", s.b.moves, s.b.maxTile);
         const Choice c = chooseMove(workers, s.b, eng, s.dc);
@@ -1973,10 +1989,11 @@ GameResult playHeadless(Workers& workers, const Options& opt, std::uint64_t seed
     if (std::getenv("G2048_STATS")) {
         const auto p = workers.total();
         const double tot = p.bfsMs + p.searchMs;
-        std::printf("  [prof] moves %llu  avgDepth %.2f  bfs %.0fms  search %.1fM nodes %.0fms  cut %.1fM\n",
+        std::printf("  [prof] moves %llu  avgDepth %.2f  bfs %.0fms  search %.1fM nodes %.0fms  cut %.1fM (%.0f%%)\n",
                     p.moves, p.moves ? (double)p.depthSum / (double)p.moves : 0.0,
                     p.bfsMs, (double)p.searchNodes / 1e6, p.searchMs,
-                    (double)p.cutNodes / 1e6);
+                    (double)p.cutNodes / 1e6,
+                    p.searchNodes ? 100.0 * (double)p.cutNodes / (double)p.searchNodes : 0.0);
     }
     workers.resetProfiles();
 
@@ -2131,6 +2148,11 @@ void printUsage() {
         "                  this is what fixes the playing speed, e.g. 8.7M = 55 moves/s\n"
         "  --ttshallow     only accept exact-depth transposition entries (A/B switch;\n"
         "                  the default accepts entries searched at least as deep)\n"
+        "  --ttpolicy N    0 = overwrite the slot, 1 = keep a much deeper foreign\n"
+        "                  entry (measured worse: 11%% more nodes, fewer hits)\n"
+        "  --proberefresh N  recompute the depth probe every N moves (default 1 =\n"
+        "                  every move; >1 reuses it while the board keeps filling)\n"
+        "  --maxmoves N    stop a headless game after N moves (benchmarks)\n"
         "  --capboost N    add N to every free-cell depth cap (deeper endgame)\n"
         "  --w E,M,MO,S,SM heuristic weights (empty,merges,mono,sum,smooth)\n"
         "  --shape P,Q     magnitude-curve exponents, pow(rank,P) for sum and\n"
@@ -2201,6 +2223,8 @@ bool parseArgs(int argc, char** argv, Options& opt) {
         else if (a == "--percache") opt.perCache = 1;
         else if (a == "--ttways")   { std::uint64_t v; if (value(v)) opt.ttWays = (int)v; }
         else if (a == "--ttslack")  { std::uint64_t v; if (value(v)) opt.ttSlack = (int)v; }
+        else if (a == "--ttpolicy") { std::uint64_t v; if (value(v)) opt.ttPolicy = (int)v; }
+        else if (a == "--maxmoves") { std::uint64_t v; if (value(v)) opt.maxMoves = (long long)v; }
         else if (a == "--w2") {                  // "freeCells,E,M,MO,S"
             float vals[5] = {0, -1, -1, -1, -1};
             const char* c = argv[++i];
@@ -2308,6 +2332,7 @@ int main(int argc, char** argv) {
     solver.setBudget(opt.budget ? opt.budget : autoBudget(nThreads));
     solver.setIgnoreFormation(opt.noIntact);
     if (opt.formPen >= 0) solver.setFormPenalty(opt.formPen);
+    solver.setTtPolicy(opt.ttPolicy);
     solver.setPrune4(opt.prune4);
     solver.setTtDeep(opt.ttDeep != 0);
     solver.setTtWays(opt.ttWays);
@@ -2334,7 +2359,12 @@ int main(int argc, char** argv) {
     // a different size means a different set of rare key collisions and therefore
     // a slightly different game. 2^22 slots = 64 MB, enough for the 2^19 search
     // budget and shared by every worker.
-    solver.setCacheBits(opt.hashBits > 0 ? opt.hashBits : 18);
+    // 2^18 (4 MB) is the size the engine settled on: it fits in L2. Larger tables
+    // were measured on the 32768 position - 2^20 cut nodes by 10% with one worker
+    // but was 2% slower with sixteen, because the table then competes with the
+    // workers' own state for the same cache. One size, one behaviour.
+    const int defaultBits = 18;
+    solver.setCacheBits(opt.hashBits > 0 ? opt.hashBits : defaultBits);
 
     if (opt.ntMode == 1) return runTrainNT(opt);
     if (opt.ntMode == 2) return runNtAverage(opt);
@@ -2384,10 +2414,11 @@ int main(int argc, char** argv) {
         // one only to throw it away. Helper instances never run the BFS depth
         // probe, so they only need a tiny buffer.
         if (!opt.perCache) sv->shareCacheWith(solver);
-        else              sv->setCacheBits(opt.hashBits > 0 ? opt.hashBits : 18);
+        else              sv->setCacheBits(opt.hashBits > 0 ? opt.hashBits : defaultBits);
         sv->setBudget(1024);
         sv->setIgnoreFormation(opt.noIntact);
         if (opt.formPen >= 0) sv->setFormPenalty(opt.formPen);
+        sv->setTtPolicy(opt.ttPolicy);
         sv->setPrune4(opt.prune4);
         sv->setTtDeep(opt.ttDeep != 0);
         sv->setTtWays(opt.ttWays);
