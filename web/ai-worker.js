@@ -26,7 +26,8 @@ self.onmessage = async (e) => {
       } else {
         const res = await fetch(msg.wasm);
         const bytes = await res.arrayBuffer();
-        core = (await WebAssembly.instantiate(bytes, imports)).exports;
+        // With a buffer source instantiate resolves to { module, instance }.
+        core = (await WebAssembly.instantiate(bytes, imports)).instance.exports;
       }
       core.init();
       core.clearTT();

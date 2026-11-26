@@ -26,6 +26,7 @@
   const langBtn = $('#langBtn');
   const themeBtn = $('#themeBtn');
   const speedBtn = $('#speedBtn');
+  const scoreBox = $('#scoreBox');
 
   /* ------------------------------------------------ i18n */
   const DICT = {
@@ -86,6 +87,7 @@
   let best = Number(localStorage.getItem(STORE.best) || 0);
   let history = [];
   let animating = false;
+  let pendingStep = null;
   let token = 0;
   let gameOver = false;
   let reachedGoal = false;
@@ -101,10 +103,14 @@
   /* ------------------------------------------------ speed */
   const SPEEDS = [1, 2, 4, 8];
   let speedIdx = 0;
+  let moveMsNow = 130;
 
   function applySpeed(save) {
-    const ms = Math.max(12, Math.round(130 / SPEEDS[speedIdx]));
-    document.documentElement.style.setProperty('--move-ms', ms + 'ms');
+    moveMsNow = Math.max(12, Math.round(130 / SPEEDS[speedIdx]));
+    // Scoped to the board instead of :root. A custom property on the document
+    // element invalidates style for the entire tree, and the speed is only read
+    // by the tiles anyway.
+    boardEl.style.setProperty('--move-ms', moveMsNow + 'ms');
     speedBtn.textContent = SPEEDS[speedIdx] + 'x';
     speedBtn.title = t('speedTitle') + ' · ' + SPEEDS[speedIdx] + 'x';
     if (save) localStorage.setItem(STORE.speed, String(speedIdx));
@@ -166,12 +172,6 @@
     post('ERR promise ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
   });
 
-  function moveMs() {
-    const v = getComputedStyle(document.documentElement).getPropertyValue('--move-ms');
-    const n = parseInt(v, 10);
-    return Number.isFinite(n) ? n : 130;
-  }
-
   /* ------------------------------------------------ theme / language */
   function applyTheme() {
     document.documentElement.dataset.theme = theme;
@@ -218,15 +218,58 @@
   }
 
   /* ------------------------------------------------ layout */
+  let lastCell = -1;
+  let lastGap = -1;
+  let layoutRaf = 0;
+
   function layout() {
     const w = boardEl.clientWidth;
     if (!w) return;
     const gap = w < 360 ? 8 : w < 430 ? 10 : 12;
     const cell = (w - 5 * gap) / 4;
-    boardEl.classList.add('no-anim');
+    // A custom property on the board invalidates style for all sixteen cells
+    // and every tile below it, so only write when the numbers really changed.
+    if (Math.abs(cell - lastCell) < 0.5 && gap === lastGap) return;
+    lastCell = cell;
+    lastGap = gap;
     boardEl.style.setProperty('--gap', gap + 'px');
     boardEl.style.setProperty('--cell', cell + 'px');
-    requestAnimationFrame(() => boardEl.classList.remove('no-anim'));
+  }
+
+  // At most one geometry write per frame: a window drag fires the observer more
+  // often than the compositor paints.
+  function scheduleLayout() {
+    if (layoutRaf) return;
+    layoutRaf = requestAnimationFrame(() => {
+      layoutRaf = 0;
+      layout();
+    });
+  }
+
+  // Dragging a window edge resizes the board every frame, and every tile, its
+  // gradient and its shadow has to be rasterised again. Shadows and the idle
+  // glow animation are dropped for the duration of the drag and restored right
+  // after it - geometry stays exact, and nothing looks different once the drag
+  // stops.
+  let lastWidth = -1;
+  let resizeTimer = 0;
+
+  function onBoardResize() {
+    const w = boardEl.clientWidth;
+    if (!w) return;
+    if (lastWidth < 0) { lastWidth = w; return; }   // first observe is the boot layout
+    if (Math.abs(w - lastWidth) < 0.5) return;
+    lastWidth = w;
+
+    const root = document.documentElement;
+    root.classList.add('resizing');
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      root.classList.remove('resizing');
+      layout();
+    }, 170);
+
+    scheduleLayout();
   }
 
   function buildGrid() {
@@ -249,23 +292,30 @@
     tile.el.style.setProperty('--c', tile.col);
   }
 
-  function paint(tile, anim) {
+  function paint(tile, anim, restart) {
     const v = tile.value;
     const digits = String(v);
-    tile.inner.dataset.v = v;
-    tile.inner.dataset.len = digits.length;
+    const inner = tile.inner;
 
-    // Long values wrap onto two tidy lines inside the tile instead of shrinking or breaking
-    if (digits.length >= 7) {
-      const mid = Math.ceil(digits.length / 2);
-      tile.inner.innerHTML = digits.slice(0, mid) + '<br>' + digits.slice(mid);
-    } else {
-      tile.inner.textContent = digits;
+    // Writing the same text and attributes again still costs a style pass on the
+    // tile, and most repaints here are a pop on an unchanged value.
+    if (inner.dataset.v !== digits) {
+      inner.dataset.v = v;
+      inner.dataset.len = digits.length;
+      // Long values wrap onto two tidy lines inside the tile instead of shrinking or breaking
+      if (digits.length >= 7) {
+        const mid = Math.ceil(digits.length / 2);
+        inner.innerHTML = digits.slice(0, mid) + '<br>' + digits.slice(mid);
+      } else {
+        inner.textContent = digits;
+      }
     }
     if (anim) {
-      tile.inner.classList.remove('appear', 'pop');
-      void tile.inner.offsetWidth;
-      tile.inner.classList.add(anim);
+      inner.classList.remove('appear', 'pop');
+      // A freshly inserted element runs its animation from the first style
+      // calculation anyway; only a repeat needs a forced reflow to restart it.
+      if (restart) void inner.offsetWidth;
+      inner.classList.add(anim);
     }
   }
 
@@ -324,30 +374,83 @@
     return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   }
 
+  let bestTimer = 0;
+  let popTimer = 0;
+
+  function flushBest() {
+    clearTimeout(bestTimer);
+    bestTimer = 0;
+    try { localStorage.setItem(STORE.best, String(best)); } catch { /* private mode */ }
+  }
+
   function updateScore(pop) {
     scoreEl.textContent = fmt(score);
     if (score > best) {
       best = score;
-      localStorage.setItem(STORE.best, String(best));
+      // A synchronous storage write on every move is a real hitch at eight moves
+      // per second; coalesce them and flush on the way out.
+      if (!bestTimer) bestTimer = setTimeout(flushBest, 400);
     }
     bestEl.textContent = fmt(best);
-    ui.maxTile = maxOf(values());
+
+    // Walking the live tiles skips building a sixteen-element array per move.
+    let maxV = 0;
+    for (const tile of tiles.values()) if (tile.value > maxV) maxV = tile.value;
+    ui.maxTile = maxV;
     renderStatus();
+
     if (pop) {
-      const box = $('#scoreBox');
-      box.classList.remove('pop');
-      void box.offsetWidth;
-      box.classList.add('pop');
-      setTimeout(() => box.classList.remove('pop'), 220);
+      scoreBox.classList.remove('pop');
+      void scoreBox.offsetWidth;
+      scoreBox.classList.add('pop');
+      clearTimeout(popTimer);
+      popTimer = setTimeout(() => scoreBox.classList.remove('pop'), 220);
     }
   }
 
   /* ------------------------------------------------ moves */
   const snapshot = () => ({ vals: values(), score });
 
-  function restore(snap) {
-    token++;
+  // A move is settled in two stages: the tiles start sliding at once, and the
+  // merge, the score and the new tile land a few dozen milliseconds later. That
+  // delay is purely visual, so the input path must never wait for it - pressing
+  // a direction while the previous slide is still on screen settles that slide
+  // on the spot and plays the new move immediately. Before this every key press
+  // inside that window was dropped, and that is what made the board feel laggy.
+  function settleStep(step) {
+    const s = step || pendingStep;
+    if (!s || s.done) return;
+    s.done = true;
+    if (pendingStep === s) pendingStep = null;
+    clearTimeout(s.timer);
     animating = false;
+    if (s.token !== token) return;      // superseded by a restart or a restore
+
+    for (const m of s.merges) {
+      m.victim.el.remove();
+      tiles.delete(m.victim.id);
+    }
+    for (const tile of tiles.values()) tile.mergedNow = false;
+    for (const m of s.merges) paint(m.target, 'pop', true);
+
+    score += s.gained;
+    updateScore(true);
+    spawnRandom();
+
+    finishTurn();
+  }
+
+  function cancelStep() {
+    if (!pendingStep) return;
+    pendingStep.done = true;
+    clearTimeout(pendingStep.timer);
+    pendingStep = null;
+    animating = false;
+  }
+
+  function restore(snap) {
+    cancelStep();
+    token++;
     clearTiles();
     score = snap.score;
     const v = snap.vals;
@@ -382,7 +485,9 @@
   }
 
   function move(dir) {
-    if (gameOver || animating) return false;
+    if (gameOver) return false;
+    if (animating) settleStep();     // finish the previous slide now, do not drop the input
+    if (gameOver) return false;      // settling it may have ended the game
 
     const [dr, dc] = VEC[dir];
     const rows = [0, 1, 2, 3];
@@ -433,35 +538,20 @@
     history.push(snap);
     if (history.length > 80) history.shift();
 
-    for (const tile of allTiles()) place(tile);
+    for (const tile of tiles.values()) place(tile);
 
-    const my = ++token;
-    const ms = moveMs();
-
-    setTimeout(() => {
-      if (my !== token) return;
-
-      for (const m of merges) {
-        m.victim.el.remove();
-        tiles.delete(m.victim.id);
-      }
-      for (const tile of allTiles()) tile.mergedNow = false;
-      for (const m of merges) paint(m.target, 'pop');
-
-      score += gained;
-      updateScore(true);
-      spawnRandom();
-
-      animating = false;
-      finishTurn();
-    }, ms + 16);
+    const step = { token: ++token, merges, gained, done: false, timer: 0 };
+    // The extra frame lets the browser commit the start positions before the
+    // merge lands; without it a very short slide can be skipped entirely.
+    step.timer = setTimeout(() => settleStep(step), moveMsNow + 16);
+    pendingStep = step;
 
     return true;
   }
 
   function finishTurn() {
-    const vals = values();
-    const maxTile = maxOf(vals);
+    let maxTile = 0;
+    for (const tile of tiles.values()) if (tile.value > maxTile) maxTile = tile.value;
     saveState();
 
     if (maxTile >= 32768 && !reachedGoal) {
@@ -588,22 +678,14 @@
   }
 
   /* ------------------------------------------------ input */
-  // A human move animates a little slower than the AI's own pace: at 8x the
-  // tiles are a blur, which is fine when the machine is playing and confusing
-  // when you are. The AI path keeps whatever speed the player picked.
+  // A human move plays at the speed the player picked. It used to be forced to
+  // at least 110 ms "for feel" on a variable shared by the whole document, so
+  // every key press also invalidated style for the page and still landed a
+  // tenth of a second late. The settle-on-demand path above already keeps the
+  // board responsive, so there is nothing left to slow down here.
   function doMove(dir) {
     if (gameOver) return;
-    const wasAuto = autoOn;
     if (autoOn) setAuto(false);
-    if (!wasAuto) {
-      const root = document.documentElement;
-      const fast = Math.max(12, Math.round(130 / SPEEDS[speedIdx]));
-      const slow = Math.max(110, Math.round(fast * 1.35));
-      root.style.setProperty('--move-ms', slow + 'ms');
-      setTimeout(() => {
-        root.style.setProperty('--move-ms', Math.max(12, Math.round(130 / SPEEDS[speedIdx])) + 'ms');
-      }, slow + 40);
-    }
     move(dir);
   }
 
@@ -659,10 +741,9 @@
   document.addEventListener('dragstart', (e) => e.preventDefault());
 
   /* ------------------------------------------------ buttons */
+  // One restart control only: New Game already does exactly this, so the second
+  // slot that undo used to hold is gone again.
   $('#newGame').addEventListener('click', () => startGame());
-  // Second restart slot, where undo used to be: same action, but it is the one
-  // under the player's thumb after a finished game.
-  $('#restartBtn').addEventListener('click', () => startGame());
 
   autoBtn.addEventListener('click', () => {
     if (gameOver) return;
@@ -730,8 +811,14 @@
   /* ------------------------------------------------ persistence */
   // The board, the score and whether the game had ended are written after every
   // settled move, so closing the tab or the app and coming back shows exactly the
-  // position that was on screen - not a fresh game.
-  function saveState() {
+  // position that was on screen - not a fresh game. The write itself is
+  // coalesced: serialising and storing sixteen numbers eight times a second is
+  // measurable main-thread time, and only the last position matters.
+  let saveTimer = 0;
+
+  function flushState() {
+    clearTimeout(saveTimer);
+    saveTimer = 0;
     try {
       localStorage.setItem(STORE.save, JSON.stringify({
         vals: values(), score, gameOver, reachedGoal,
@@ -740,6 +827,16 @@
       /* private mode: keep playing, just without a saved game */
     }
   }
+
+  function saveState() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flushState, 250);
+  }
+
+  window.addEventListener('pagehide', flushState);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { flushState(); flushBest(); }
+  });
 
   function restoreSaved() {
     let saved = null;
@@ -765,8 +862,8 @@
   /* ------------------------------------------------ startup */
   function startGame() {
     post('NEW');
+    cancelStep();
     token++;
-    animating = false;
     gameOver = false;
     reachedGoal = false;
     history = [];
@@ -780,7 +877,7 @@
     spawnRandom();
     spawnRandom();
     updateScore(false);
-    saveState();
+    flushState();
   }
 
   // The browser build starts at 4x: the search now answers in about 27 ms, and at
@@ -795,7 +892,7 @@
   buildGrid();
   layout();
   if (!restoreSaved()) startGame();
-  new ResizeObserver(layout).observe(boardEl);
+  new ResizeObserver(onBoardResize).observe(boardEl);
   applyLang();
   if (!bridge()) setAi('browserOnly', 'off');
 })();

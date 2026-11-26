@@ -11,7 +11,7 @@
 
 (function (global) {
   const MAX_WORKERS = 16;
-  const VERSION = '6';          // bump together with index.html to defeat caches
+  const VERSION = '9';          // bump together with index.html to defeat caches
   const query = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 
   let workers = [];
@@ -20,10 +20,11 @@
   let readyPromise = null;
   let ready = false;
   let taskSeq = 0;
-  const pending = new Map();     // task id -> resolve
+  const pending = new Map();     // task id -> callback(value)
   let taskMs = 0;                // sum of worker-reported task durations
   let taskCount = 0;
   const queue = [];              // tasks waiting for a free worker
+  let qhead = 0;                 // index of the next task to hand out
   const idle = [];               // worker indices currently free
   const busy = [];
 
@@ -48,13 +49,20 @@
   }
 
   // Hands the next queued task to every worker that is free. Called when tasks
-  // are queued and again whenever a worker reports back.
+  // are queued and again whenever a worker reports back. The head index is
+  // advanced instead of shifting the array: a move queues a hundred-odd tasks
+  // and every shift would move the whole tail.
   function pump() {
-    while (idle.length > 0 && queue.length > 0) {
+    while (idle.length > 0 && qhead < queue.length) {
       const idx = idle.pop();
-      const job = queue.shift();
+      const job = queue[qhead];
+      queue[qhead++] = null;
       busy[idx] = 1;
       workers[idx].postMessage(job.msg);
+    }
+    if (qhead === queue.length) {
+      queue.length = 0;
+      qhead = 0;
     }
   }
 
@@ -71,10 +79,10 @@
       if (m.type === 'result') {
         taskMs += m.t || 0;
         taskCount += 1;
-        const resolve = pending.get(m.id);
-        if (resolve) {
+        const cb = pending.get(m.id);
+        if (cb) {
           pending.delete(m.id);
-          resolve(m.v);
+          cb(m.v);
         }
         busy[idx] = 0;
         idle.push(idx);
@@ -189,11 +197,24 @@
         for (let mv = 0; mv < 8; mv++) jobs.push({ d, s, n, mv });
       }
     }
-    if (jobs.length === 0) return { scores: [-Infinity, -Infinity, -Infinity, -Infinity], ms: 0, depth };
+    const total = jobs.length;
+    if (total === 0) return { scores: [-Infinity, -Infinity, -Infinity, -Infinity], ms: 0, depth };
 
-    const promises = jobs.map((job) => new Promise((resolve) => {
+    // One promise and one counter for the whole move instead of a promise per
+    // task: a full move is a hundred-odd tasks, and at eight moves a second the
+    // per-task bookkeeping was visible on the main thread.
+    const values = new Array(total);
+    let arrived = 0;
+    let settleAll = null;
+    const allDone = new Promise((resolve) => { settleAll = resolve; });
+
+    for (let i = 0; i < total; i++) {
+      const job = jobs[i];
       const id = ++taskSeq;
-      pending.set(id, resolve);
+      pending.set(id, (v) => {
+        values[i] = v;
+        if (++arrived === total) settleAll();
+      });
       queue.push({
         id,
         msg: {
@@ -201,10 +222,10 @@
           dir: job.d, shard: job.s, nShard: job.n, move: job.mv, depth,
         },
       });
-    }));
+    }
     pump();
 
-    const values = await Promise.all(promises);
+    await allDone;
 
     const scores = [-Infinity, -Infinity, -Infinity, -Infinity];
     let k = 0;
@@ -214,8 +235,8 @@
       for (let s = 0; s < n; s++) {
         let v2 = 0;
         let v4 = 0;
-        for (let mv = 0; mv < 4; mv++) { const v = values[k++]; if (v > v2) v2 = v; }
-        for (let mv = 4; mv < 8; mv++) { const v = values[k++]; if (v > v4) v4 = v; }
+        for (let mv = 0; mv < 4; mv++) { const v = values[k++] ?? 0; if (v > v2) v2 = v; }
+        for (let mv = 4; mv < 8; mv++) { const v = values[k++] ?? 0; if (v > v4) v4 = v; }
         // The search core floors an all-blocked max node at zero, so the same
         // floor is applied here rather than propagating the sentinel.
         sum += (0.9 * Math.max(0, v2) + 0.1 * Math.max(0, v4)) / n;
@@ -253,7 +274,7 @@
     set depth(v) { depth = Math.max(DEPTH_MIN, Math.min(DEPTH_MAX, v | 0)); },
     workerCount,
     stats() {
-      return { workers: workers.length, idle: idle.length, queued: queue.length, depth, taskMs, taskCount };
+      return { workers: workers.length, idle: idle.length, queued: queue.length - qhead, depth, taskMs, taskCount };
     },
   };
 })(typeof self !== 'undefined' ? self : this);
