@@ -672,9 +672,19 @@
     askAI('hint');
   });
 
-  // ?auto=1 starts the AI immediately, which doubles as the demo link.
+  // ?auto=1 starts the AI immediately, which doubles as the demo link. Wait for
+  // the engine (bounded, so a broken pool still starts a playable game).
   if (/[?&]auto=1/.test(location.search)) {
-    setTimeout(() => { startGame(); setAuto(true); }, 400);
+    const go = () => { startGame(); setAuto(true); };
+    const engine = window.LiuEngine;
+    if (engine && !engine.ready) {
+      Promise.race([
+        engine.init(),
+        new Promise((r) => setTimeout(r, 3000)),
+      ]).then(() => setTimeout(go, 150));
+    } else {
+      setTimeout(go, 400);
+    }
   }
 
   // Browser build: bring up the worker pool and say which engine is running.
