@@ -481,7 +481,7 @@
       return;
     }
 
-    if (autoOn) setTimeout(() => { if (autoOn) askAI('auto'); }, 20);
+    if (autoOn) setTimeout(() => { if (autoOn) askAI("auto"); }, 0);
   }
 
   /* ------------------------------------------------ overlay / toasts */
@@ -759,5 +759,4 @@
   new ResizeObserver(layout).observe(boardEl);
   applyLang();
   if (!bridge()) setAi('browserOnly', 'off');
-  if (qs.get('auto') === '1') setTimeout(() => setAuto(true), 300);
 })();

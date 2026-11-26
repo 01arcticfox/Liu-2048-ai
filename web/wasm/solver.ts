@@ -366,6 +366,44 @@ export function outR1(): i32 { return t1; }
 export function outR2(): i32 { return t2; }
 export function outR3(): i32 { return t3; }
 
+// A quarter of a shard: one move out of one spawn outcome, unweighted.
+//
+// The root needs max over moves anyway, so each of those moves can be a task of
+// its own. That is what keeps the pool busy: a single shard is up to 0.24 s at
+// depth 5, which becomes the whole move's latency once it is the last task.
+// `move` 0-3 is the two-tile spawn with that move, 4-7 the four-tile spawn.
+export function scoreCellMove(r0: i32, r1: i32, r2: i32, r3: i32,
+                              dir: i32, shard: i32, nShard: i32,
+                              move: i32, depth: i32): f32 {
+  const g = applyMove(r0, r1, r2, r3, dir);
+  if (g < 0) return -1e30;
+  const b0 = t0, b1 = t1, b2 = t2, b3 = t3;
+  const tile: i32 = move < 4 ? 1 : 2;
+  const dir2: i32 = move & 3;
+  let seen = 0;
+  for (let cell = 0; cell < 16; ++cell) {
+    const row = cell >> 2;
+    const shift = (cell & 3) * 4;
+    let empty = false;
+    if (row == 0) empty = (b0 & (0xF << shift)) == 0;
+    else if (row == 1) empty = (b1 & (0xF << shift)) == 0;
+    else if (row == 2) empty = (b2 & (0xF << shift)) == 0;
+    else empty = (b3 & (0xF << shift)) == 0;
+    if (!empty) continue;
+    if (seen == shard) {
+      let a0 = b0, a1 = b1, a2 = b2, a3 = b3;
+      if (row == 0) a0 |= tile << shift;
+      else if (row == 1) a1 |= tile << shift;
+      else if (row == 2) a2 |= tile << shift;
+      else a3 |= tile << shift;
+      if (applyMove(a0, a1, a2, a3, dir2) < 0) return -1e30;
+      return expectNode(t0, t1, t2, t3, depth - 1);
+    }
+    seen += 1;
+  }
+  return -1e30;
+}
+
 // Number of empty cells after a move (0 = illegal).
 export function freeAfterMove(r0: i32, r1: i32, r2: i32, r3: i32, dir: i32): i32 {
   const g = applyMove(r0, r1, r2, r3, dir);

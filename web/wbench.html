@@ -1,0 +1,24 @@
+<!doctype html><meta charset="utf-8"><title>pool bench</title>
+<pre id="out">running…</pre>
+<script src="engine.js?v=5"></script>
+<script>
+const q = new URLSearchParams(location.search);
+const rows = (q.get('rows') || '2020,3200,6321,9753').split(',').map((v) => parseInt(v, 16));
+const depths = (q.get('depths') || '4,5').split(',').map(Number);
+(async () => {
+  const lines = [];
+  const n = await LiuEngine.init();
+  const fc = LiuEngine.freeCounts(rows);
+  lines.push(`workers ${n}  free ${fc.join(',')}`);
+  for (const d of depths) {
+    LiuEngine.depth = d;
+    const s = LiuEngine.stats();
+    const t = performance.now();
+    const r = await LiuEngine.evaluate(rows, fc);
+    const e = LiuEngine.stats();
+    const wall = performance.now() - t;
+    lines.push(`depth ${d}: wall ${wall.toFixed(0)}ms  tasks ${e.taskCount - s.taskCount}  taskMs ${Math.round(e.taskMs - s.taskMs)}  util ${Math.round((e.taskMs - s.taskMs) / (wall * n) * 100)}%  reported ${r.depth}`);
+  }
+  document.getElementById('out').textContent = lines.join('\n');
+})();
+</script>

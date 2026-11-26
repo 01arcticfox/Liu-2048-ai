@@ -12,12 +12,15 @@ WebAssembly across a pool of Web Workers.
 
 <p align="center"><sub>WebView2 build, 8x speed: the AI builds the 32768 tile at a score of 452,832, then offers to keep going.</sub></p>
 
+Play it in the browser: **https://xiaoxu4452.github.io/Liu-2048-ai/** - append
+`?auto=1` to watch the AI from the first move.
+
 ## Two builds, one engine
 
 | Build | Path | Search | Speed |
 |---|---|---|---|
 | Desktop console / WebView2 app | `native/` | C++20, 16 threads | 70 moves/s on 8C/16T |
-| Browser | `web/` | WebAssembly + Web Workers | ~32 ms per move on 8 workers (depth 5) |
+| Browser | `web/` | WebAssembly + Web Workers | ~27 ms per move on 16 workers (depth 4) |
 
 The desktop app is the strong one. The browser build runs the identical
 algorithm, at a depth the device can afford; it picks its own depth per move so
@@ -28,10 +31,15 @@ that a phone and a workstation feel similar.
 All numbers below are 40 independent games on one machine (Ryzen 7 8845H,
 8 cores / 16 threads), target tile 32768, 8 games running in parallel:
 
-| Search budget | Average depth | Games reaching 32768 | Average score |
+| Search budget | Average depth | Games reaching 32768 | Average score at 32768 | Average score, all 40 games |
 |---|---|---|---|
-| 2^19 | 4.5 plies | 19/40 (48%) | 398,237 |
-| **2^21 (default)** | **5.2 plies** | **24/40 (60%)** | **415,992** |
+| 2^19 | 4.5 plies | 19/40 (48%) | **452,860** | 398,237 |
+| **2^21 (default)** | **5.2 plies** | **24/40 (60%)** | **452,861** | **415,992** |
+
+Both budgets land within one point of each other at 32768, which is expected: the
+score is a function of the tile chain, so reaching 32768 always pays about
+452,900. The all-games column is lower only because the runs that stop at 16384
+(about 367,000 each) are averaged in.
 
 Going deeper is not automatically better, which is why 2^21 is the default: the
 depth the probe returns is an integer, so a 1.5x budget increase leaves the
@@ -39,8 +47,10 @@ midgame depth almost unchanged while pushing the endgame one ply deeper, and
 that costs 2.5x the time for less strength. Measured at the same seeds: 2^19
 5/8, 2^21 7/8, 1.5x 4/8, 2^22 5/8.
 
-The browser build reaches depth 5 in about 32 ms per move on eight workers; in
-headless play at depth 4 it averages 16 moves/s on a single thread.
+The browser build runs the same search on up to sixteen workers: about 27 ms per
+move at four plies, which plays at roughly nine moves per second at 8x playback.
+One more ply costs thirteen times as much there, so the open board stays at four
+and only the crowded endgame pays for five.
 
 ## How the engine works
 
