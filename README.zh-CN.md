@@ -10,7 +10,7 @@
 
 <p align="center"><sub>WebView2 版、8 倍速：AI 在 452,832 分时合出 32768（2^15），然后询问是否继续。</sub></p>
 
-在线试玩：**https://xiaoxu4452.github.io/Liu-2048-ai/** ，链接后加 `?auto=1`
+在线试玩：**https://01arcticfox.github.io/Liu-2048-ai/** ，链接后加 `?auto=1`
 可以直接看 AI 自动对局。
 
 ## 两个版本，同一套引擎

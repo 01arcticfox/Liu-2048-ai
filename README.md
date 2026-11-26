@@ -12,7 +12,7 @@ WebAssembly across a pool of Web Workers.
 
 <p align="center"><sub>WebView2 build, 8x speed: the AI builds the 32768 tile at a score of 452,832, then offers to keep going.</sub></p>
 
-Play it in the browser: **https://xiaoxu4452.github.io/Liu-2048-ai/** - append
+Play it in the browser: **https://01arcticfox.github.io/Liu-2048-ai/** - append
 `?auto=1` to watch the AI from the first move.
 
 ## Two builds, one engine
