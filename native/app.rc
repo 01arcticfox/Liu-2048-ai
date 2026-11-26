@@ -1,0 +1,12 @@
+// Resources embedded into Game2048AI.exe so the program can be distributed as a
+// single file. On first run the payload is written to %LOCALAPPDATA%\2048AIBlue
+// and pointed at from there; nothing has to sit next to the exe.
+//
+// 1000-1002  the web UI (index.html, app.css, app.js)
+// 2000       WebView2Loader.dll, so the loader does not have to be shipped beside
+//            the exe (the WebView2 *runtime* itself still comes from Windows)
+
+1000 RCDATA "web\\index.html"
+1001 RCDATA "web\\app.css"
+1002 RCDATA "web\\app.js"
+2000 RCDATA "third_party\\WebView2\\x64\\WebView2Loader.dll"

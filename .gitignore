@@ -1,0 +1,9 @@
+# build outputs
+node_modules/
+*.obj
+build/
+
+# editor / OS
+.vscode/
+.DS_Store
+Thumbs.db
