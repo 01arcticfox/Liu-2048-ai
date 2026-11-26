@@ -38,6 +38,12 @@
   const DEPTH_MIN = 3;
   const DEPTH_MAX = 6;
 
+  // The speed button doubles as a quality switch: the page lowers the ceiling
+  // and the crowded-board threshold when the player asks for eight moves a
+  // second, and raises both when the player is watching at 1x.
+  let depthCap = 5;
+  let endgameFree = 5;
+
   const forcedDepth = Number(query.get('depth') || 0);
   if (forcedDepth > 0) depth = Math.max(DEPTH_MIN, Math.min(DEPTH_MAX, forcedDepth | 0));
 
@@ -104,8 +110,21 @@
     });
     core = instance.exports;
     core.init();
+    core.setTTBits(ttBits());
     core.clearTT();
     return core;
+  }
+
+  // Table size by device. The native build settled on 2^18 entries (4 MB per
+  // thread) because that fits in L2 and measured 1.6x faster than a 64 MB table;
+  // the browser pool follows the same reasoning. 2^19 removes about 13% of the
+  // work but loses the same amount again to cache misses, and costs 6 MB per
+  // worker, which a phone cannot spare.
+  function ttBits() {
+    const forced = Number(query.get('tt') || 0);
+    if (forced >= 12 && forced <= 21) return forced | 0;
+    const gb = navigator.deviceMemory || 4;
+    return gb >= 4 ? 18 : 17;
   }
 
   function init() {
@@ -132,7 +151,7 @@
             }
           };
           w.addEventListener('message', onReady);
-          w.postMessage({ type: 'init', module: wasmModule, wasm: 'wasm/solver.wasm' });
+          w.postMessage({ type: 'init', module: wasmModule, wasm: 'wasm/solver.wasm', ttBits: ttBits() });
         }
       });
     })();
@@ -256,7 +275,10 @@
         const n = freeCounts[d] | 0;
         if (n > 0 && n < minFree) minFree = n;
       }
-      depth = minFree <= 5 ? 5 : 4;
+      // Five plies only where the branch factor has collapsed enough to pay for
+      // them. The threshold and the ceiling both come from the tuning below.
+      depth = minFree <= endgameFree ? Math.min(depthCap, 5) : Math.min(depthCap, 4);
+      if (depth < DEPTH_MIN) depth = DEPTH_MIN;
     }
 
     return { scores, ms, depth };
@@ -272,6 +294,13 @@
     applyMove,
     get depth() { return depth; },
     set depth(v) { depth = Math.max(DEPTH_MIN, Math.min(DEPTH_MAX, v | 0)); },
+    // cap: highest depth the pool may use; free: how many empty cells (after the
+    // quietest move) earn the extra ply.
+    setTuning(cap, free) {
+      depthCap = Math.max(DEPTH_MIN, Math.min(DEPTH_MAX, cap | 0));
+      endgameFree = Math.max(0, Math.min(15, free | 0));
+    },
+    get tuning() { return { depthCap, endgameFree }; },
     workerCount,
     stats() {
       return { workers: workers.length, idle: idle.length, queued: queue.length - qhead, depth, taskMs, taskCount };

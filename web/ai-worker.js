@@ -30,6 +30,8 @@ self.onmessage = async (e) => {
         core = (await WebAssembly.instantiate(bytes, imports)).instance.exports;
       }
       core.init();
+      // Table size comes from the pool, which sizes it to the device.
+      if (msg.ttBits) core.setTTBits(msg.ttBits);
       core.clearTT();
       self.postMessage({ type: 'ready' });
     } catch (err) {

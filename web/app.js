@@ -88,6 +88,7 @@
   let history = [];
   let animating = false;
   let pendingStep = null;
+  let queuedDir = -1;        // one slot of lookahead for human input
   let token = 0;
   let gameOver = false;
   let reachedGoal = false;
@@ -103,17 +104,38 @@
   /* ------------------------------------------------ speed */
   const SPEEDS = [1, 2, 4, 8];
   let speedIdx = 0;
-  let moveMsNow = 130;
+  let moveMsNow = 130;        // autopilot pace, chosen with the speed button
+  let currentMs = -1;         // what the board is currently set to
+
+  // A human move plays at a fixed, readable pace. The speed button exists for
+  // the autopilot: when a person is driving, a slide that finishes inside one
+  // frame is unreadable, and one that takes a third of a second feels stuck.
+  // 110 ms matches what the established 2048 pages use for a slide.
+  const HUMAN_MS = 110;
+
+  function setSlideMs(ms) {
+    if (ms === currentMs) return;
+    currentMs = ms;
+    // Scoped to the board instead of :root. A custom property on the document
+    // element invalidates style for the entire tree, and only tiles read it.
+    boardEl.style.setProperty('--move-ms', ms + 'ms');
+  }
 
   function applySpeed(save) {
-    // 112 ms base instead of 130: at the default 4x a slide now runs 28 ms, which
-    // keeps four to eight moves a second legible while the board stays ahead of
-    // the hand. 1x is still a deliberate, watchable 112 ms.
+    // 112 ms base: at the default 4x a slide runs 28 ms, which keeps four to
+    // eight moves a second legible while the board stays ahead of the hand.
     moveMsNow = Math.max(12, Math.round(112 / SPEEDS[speedIdx]));
-    // Scoped to the board instead of :root. A custom property on the document
-    // element invalidates style for the entire tree, and the speed is only read
-    // by the tiles anyway.
-    boardEl.style.setProperty('--move-ms', moveMsNow + 'ms');
+
+    // The button is a quality switch as well as a pace switch. 8x plays as fast
+    // as the pool can answer, so it never buys the fifth ply; 1x and 2x are for
+    // watching, and spend the extra time on depth.
+    const engine = window.LiuEngine;
+    if (engine && engine.setTuning) {
+      const fast = speedIdx >= 3;
+      const slow = speedIdx <= 1;
+      engine.setTuning(fast ? 4 : 5, fast ? 0 : slow ? 7 : 5);
+    }
+
     speedBtn.textContent = SPEEDS[speedIdx] + 'x';
     speedBtn.title = t('speedTitle') + ' · ' + SPEEDS[speedIdx] + 'x';
     if (save) localStorage.setItem(STORE.speed, String(speedIdx));
@@ -424,7 +446,7 @@
     { transform: 'scale(1.19)', offset: 0.42 },
     { transform: 'scale(1)' },
   ];
-  const MERGE_POP_TIMING = { duration: 200, easing: 'cubic-bezier(0.24, 0.9, 0.32, 1.3)' };
+  const MERGE_POP_TIMING = { duration: 150, easing: 'cubic-bezier(0.24, 0.9, 0.32, 1.3)' };
 
   // A move is settled in two stages: the tiles start sliding at once, and the
   // merge, the score and the new tile land a few dozen milliseconds later. That
@@ -460,9 +482,20 @@
     spawnRandom();
 
     finishTurn();
+
+    // A direction pressed while this slide was running waited in a single slot
+    // instead of cutting the slide short. Play it the moment the move settles,
+    // which is what makes fast human input feel like a queue rather than a
+    // stutter: every slide is still drawn, none is skipped.
+    if (queuedDir >= 0) {
+      const next = queuedDir;
+      queuedDir = -1;
+      if (!gameOver) move(next);
+    }
   }
 
   function cancelStep() {
+    queuedDir = -1;
     if (!pendingStep) return;
     pendingStep.done = true;
     clearTimeout(pendingStep.timer);
@@ -557,6 +590,12 @@
     if (!moved) return false;
 
     animating = true;
+    // Autopilot runs at the speed the player picked; a human move always runs at
+    // the readable pace, whatever the button says. The settle timer has to use
+    // the same number as the CSS transition, or the next tile appears while the
+    // previous slide is still moving.
+    const slideMs = autoOn ? moveMsNow : HUMAN_MS;
+    setSlideMs(slideMs);
     history.push(snap);
     if (history.length > 80) history.shift();
 
@@ -565,7 +604,7 @@
     const step = { token: ++token, merges, gained, done: false, timer: 0 };
     // The small buffer lets the browser commit the start positions before the
     // merge lands; without it a very short slide can be skipped entirely.
-    step.timer = setTimeout(() => settleStep(step), moveMsNow + 10);
+    step.timer = setTimeout(() => settleStep(step), slideMs + 10);
     pendingStep = step;
 
     return true;
@@ -700,14 +739,15 @@
   }
 
   /* ------------------------------------------------ input */
-  // A human move plays at the speed the player picked. It used to be forced to
-  // at least 110 ms "for feel" on a variable shared by the whole document, so
-  // every key press also invalidated style for the page and still landed a
-  // tenth of a second late. The settle-on-demand path above already keeps the
-  // board responsive, so there is nothing left to slow down here.
+  // Human input is queued one deep rather than cutting the running slide short.
+  // A press that arrives mid-slide waits for it and then plays; presses that
+  // pile up past one slot collapse into the newest, so holding a key never
+  // builds a backlog. Every slide is drawn, which is the rhythm the mature 2048
+  // pages have and the reason fast play stops feeling jumpy.
   function doMove(dir) {
     if (gameOver) return;
     if (autoOn) setAuto(false);
+    if (animating) { queuedDir = dir; return; }
     move(dir);
   }
 

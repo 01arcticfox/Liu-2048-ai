@@ -9,9 +9,12 @@
 
 const ROWS: i32 = 4;
 const LINE_COUNT: i32 = 65536;
-const TT_BITS: i32 = 17;
-const TT_SIZE: i32 = 1 << TT_BITS;
-const TT_MASK: i32 = TT_SIZE - 1;
+// Transposition table. The size is picked at boot from the device: 2^19 entries
+// costs 6 MB per worker and was worth about 20% of the search time in the
+// benchmark, which is too much for a phone, so small devices keep 2^17.
+let ttBits: i32 = 17;
+let ttSize: i32 = 1 << ttBits;
+let ttMask: i32 = ttSize - 1;
 
 // Tile ranks are 0 (empty) .. 15 (32768). The heuristic works on tile values.
 let powSum: StaticArray<f32> = new StaticArray<f32>(0);    // rank ^ sumExp
@@ -160,10 +163,20 @@ export function init(): void {
   buildPowTables();
   buildMoveTables();
   buildLineScore();
-  ttKey = new StaticArray<i32>(TT_SIZE);
-  ttVal = new StaticArray<f32>(TT_SIZE);
-  ttDep = new StaticArray<i32>(TT_SIZE);
+  allocTT(ttBits);
 }
+
+function allocTT(bits: i32): void {
+  ttBits = bits < 12 ? 12 : bits > 21 ? 21 : bits;
+  ttSize = 1 << ttBits;
+  ttMask = ttSize - 1;
+  ttKey = new StaticArray<i32>(ttSize);
+  ttVal = new StaticArray<f32>(ttSize);
+  ttDep = new StaticArray<i32>(ttSize);
+}
+
+// Called before the first search; the pool asks for a table sized to the device.
+export function setTTBits(bits: i32): void { allocTT(bits); }
 
 export function setWeights(e: f32, m: f32, mo: f32, s: f32): void {
   wEmpty = e; wMerges = m; wMono = mo; wSum = s;
@@ -171,7 +184,7 @@ export function setWeights(e: f32, m: f32, mo: f32, s: f32): void {
 }
 
 export function clearTT(): void {
-  for (let i = 0; i < TT_SIZE; ++i) ttDep[i] = 0;
+  for (let i = 0; i < ttSize; ++i) ttDep[i] = 0;
 }
 
 export function nodeCount(): i64 { return nodes; }
@@ -258,7 +271,7 @@ function expectNode(r0: i32, r1: i32, r2: i32, r3: i32, depth: i32): f32 {
   if (depth <= 0) return evalBoard(r0, r1, r2, r3);
 
   const h = hash4(r0, r1, r2, r3);
-  const slot = h & TT_MASK;
+  const slot = h & ttMask;
   if (ttDep[slot] >= depth && ttKey[slot] == h) return ttVal[slot];
 
   // Count empty cells and the spawn weights.

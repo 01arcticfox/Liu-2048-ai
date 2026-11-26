@@ -484,7 +484,7 @@ html[data-theme="light"] .tile-inner[data-v="4"] { border-color: rgba(60, 110, 1
 
 /* The merge pop lives in app.js as a web animation: restarting it via a class
    costs a forced reflow per merged tile, which matters at eight moves a second. */
-.tile-inner.appear { animation: tile-appear 190ms cubic-bezier(0.2, 0.8, 0.3, 1.1) both; }
+.tile-inner.appear { animation: tile-appear 150ms cubic-bezier(0.2, 0.8, 0.3, 1.1) both; }
 
 /* ------------------------------------------------ hint arrow */
 .hint {
