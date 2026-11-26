@@ -59,6 +59,12 @@ and only the crowded endgame pays for five.
 - **Search.** Expectimax over the real spawn distribution (90% twos, 10% fours).
   There is no pruning of the four-spawn branch: dropping it in the last plies
   makes the engine assume only twos appear, which measurably loses games.
+  For the same reason there is no formation pruning. An earlier build dropped
+  legal directions that broke a snake-shaped pattern, which is the kind of move
+  ordering a deterministic game rewards - but 2048 is a chance model, so
+  deleting directions deletes part of the expectation and the search stops
+  seeing the trap it is walking into. Forty games on the same seeds: 60% reached
+  32768 with the pruning off at 909 s per game, 46% with it on at 1774 s.
 - **Evaluation.** Five features per line - free cells, merge potential,
   monotonicity, tile magnitude, and a constant - precomputed into a
   65,536-entry table, summed over the four rows and four columns. Weights:

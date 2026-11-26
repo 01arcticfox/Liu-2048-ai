@@ -145,7 +145,8 @@ struct Options {
     std::string   tablePath;          // learned table to load (or to save)
     bool          classic    = false; // BFS depth probe + node budget instead
     int           threads    = defaultThreads();   // search workers
-    bool          noIntact   = false; // experiment: drop formation pruning
+    float         formPen    = -1;  // soft formation anchor penalty (-1 = keep engine default)
+    bool          noIntact   = true;  // formation pruning off: 2048 is a chance model
     int           prune4     = 0;     // 0 = both spawns, N = skip 4-spawn at depth <= N
 };
 
@@ -2117,7 +2118,12 @@ void printUsage() {
         "  --threads N     search workers, 1-16 (default: every logical core)\n"
         "  --prune4 [N]    skip the 4-spawn branch at depth <= N (default 0 = never)\n"
         "                  non-zero makes play non-reproducible and is not recommended)\n"
-        "  --hash N        transposition table slots = 2^N (default 22 = 64 MB)\n"
+        "  --intact        turn formation pruning back on (default off: 2048 is a\n"
+        "                  chance model, so dropping legal directions deletes part\n"
+        "                  of the expectation; measured 46%% vs 60%% with it on)\n"
+        "  --formpen N     soft formation anchor penalty (default 0 = off)\n"
+        "  --hash N        transposition table slots = 2^N (default 18 = 4 MB,\n"
+        "                  which is what fits in L2)\n"
         "  --probe N       depth probe may materialise at most 2^N boards\n"
         "  --maxdepth N    hard ceiling on search plies (0 = none)\n"
         "  --endboost P,F  add P plies once free cells <= F (default off)\n"
@@ -2174,6 +2180,8 @@ bool parseArgs(int argc, char** argv, Options& opt) {
         else if (a == "--show")     opt.show = true;
         else if (a == "--depth")    { std::uint64_t v; if (value(v)) opt.fixedDepth = (int)v; }
         else if (a == "--nointact") opt.noIntact = true;
+        else if (a == "--intact")   opt.noIntact = false;
+        else if (a == "--formpen") { std::uint64_t v; if (value(v)) opt.formPen = (float)v; }
         else if (a == "--noshard")  opt.noshard = true;
         else if (a == "--startpos") { if (i + 1 < argc) opt.startPos = argv[++i]; }
         else if (a == "--snapat")   { std::uint64_t v; if (value(v)) opt.snapAt = (int)v; }
@@ -2299,6 +2307,7 @@ int main(int argc, char** argv) {
     static Solver4x4 solver;
     solver.setBudget(opt.budget ? opt.budget : autoBudget(nThreads));
     solver.setIgnoreFormation(opt.noIntact);
+    if (opt.formPen >= 0) solver.setFormPenalty(opt.formPen);
     solver.setPrune4(opt.prune4);
     solver.setTtDeep(opt.ttDeep != 0);
     solver.setTtWays(opt.ttWays);
@@ -2378,6 +2387,7 @@ int main(int argc, char** argv) {
         else              sv->setCacheBits(opt.hashBits > 0 ? opt.hashBits : 18);
         sv->setBudget(1024);
         sv->setIgnoreFormation(opt.noIntact);
+        if (opt.formPen >= 0) sv->setFormPenalty(opt.formPen);
         sv->setPrune4(opt.prune4);
         sv->setTtDeep(opt.ttDeep != 0);
         sv->setTtWays(opt.ttWays);
