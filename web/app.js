@@ -32,7 +32,7 @@
     zh: {
       sub: 'Bitboard 期望搜索 · 目标 2<sup>15</sup> = 32768',
       score: '得分', best: '最高',
-      restart: '重新开始', auto: 'AI 自动', hint: 'AI 提示',
+      newGame: '新游戏', restart: '重新开始', auto: 'AI 自动', hint: 'AI 提示',
       tips: 'WASD / 方向键 · 鼠标拖拽 · 触屏滑动',
       idle: 'AI 待机', thinking: 'AI 思考中…', analyzing: 'AI 分析中…', running: 'AI 自动运行',
       suggest: '建议', evalNone: '评估 —', evalWord: '评估', maxPrefix: '最大',
@@ -49,7 +49,7 @@
     en: {
       sub: 'Bitboard expectimax · target 2<sup>15</sup> = 32768',
       score: 'Score', best: 'Best',
-      restart: 'Restart', auto: 'Auto AI', hint: 'Hint',
+      newGame: 'New Game', restart: 'Restart', auto: 'Auto AI', hint: 'Hint',
       tips: 'WASD / Arrows · Drag · Swipe',
       idle: 'AI idle', thinking: 'Thinking…', analyzing: 'Analyzing…', running: 'Auto running',
       suggest: 'Suggest', evalNone: 'Eval —', evalWord: 'Eval', maxPrefix: 'Max',
@@ -660,6 +660,9 @@
 
   /* ------------------------------------------------ buttons */
   $('#newGame').addEventListener('click', () => startGame());
+  // Second restart slot, where undo used to be: same action, but it is the one
+  // under the player's thumb after a finished game.
+  $('#restartBtn').addEventListener('click', () => startGame());
 
   autoBtn.addEventListener('click', () => {
     if (gameOver) return;

@@ -568,7 +568,7 @@ html[data-theme="light"] .dot.on { background: #0f8fd0; box-shadow: 0 0 10px rgb
 /* ------------------------------------------------ buttons */
 .controls {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   flex: 0 0 auto;
 }
