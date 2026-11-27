@@ -126,10 +126,14 @@
   // work but loses the same amount again to cache misses, and costs 6 MB per
   // worker, which a phone cannot spare.
   function ttBits() {
+    // 2^17 slots per worker, the size this build has always used. 2^18 was tried
+    // and is not measurably faster in the pool (six runs at each size: 20-27 vs
+    // 20-21 moves/s, i.e. inside the noise), and it doubles the memory every
+    // worker holds. The pool runs one table per worker, so the native build's
+    // "bigger table pays" result does not transfer.
     const forced = Number(query.get('tt') || 0);
     if (forced >= 12 && forced <= 21) return forced | 0;
-    const gb = navigator.deviceMemory || 4;
-    return gb >= 4 ? 18 : 17;
+    return 17;
   }
 
   function init() {
