@@ -248,8 +248,6 @@ public:
 
 	// A/B switch for the formation pruning experiment (off = original behaviour).
 	void setIgnoreFormation(bool on) { std::lock_guard<std::mutex> lk(m_mutex); m_ignoreFormation = on; }
-	void setFormPenalty(float v)    { std::lock_guard<std::mutex> lk(m_mutex); m_formPenalty = std::max(0.0f, v); }
-	float formPenalty() const       { return m_formPenalty; }
 	// level 0 = expand both spawns everywhere, 1 = drop the 4-spawn on the leaf
 	// layer, 2 = on the last two layers, and so on.
 	// Heuristic weights. Rebuilding the 65536-entry table costs microseconds, so
@@ -302,9 +300,6 @@ public:
 	void setTtDeep(bool on) { std::lock_guard<std::mutex> lk(m_mutex); m_ttDeep = on; }
 	void setTtWays(int n)   { std::lock_guard<std::mutex> lk(m_mutex); m_ttWays = (n >= 2 ? 2 : 1); }
 	void setTtSlack(int n)  { std::lock_guard<std::mutex> lk(m_mutex); m_ttSlack = std::clamp(n, 0, 3); }
-	// 0 = always overwrite a foreign slot, 1 = keep a foreign slot that is more
-	// than two plies deeper than the value being stored.
-	void setTtPolicy(int n) { std::lock_guard<std::mutex> lk(m_mutex); m_ttPolicy = (n == 1) ? 1 : 0; }
 
 	// Attach a trained n-tuple network; nullptr puts the analytic heuristic back.
 	void setNet(nt::Net* n) { std::lock_guard<std::mutex> lk(m_mutex); m_net = n; }
@@ -543,10 +538,6 @@ private:
 
 	struct Formation {
 		uint64_t even = 0, odd = 0, addend = 0, layout = 0;
-		// Cell mask of the pattern itself. Kept separately from even/odd so a
-		// partial anchor (see get()) can steer the leaf evaluation without
-		// filtering any move.
-		uint64_t cells = 0;
 	};
 
 	static inline uint64_t atLeast(uint64_t board, int rank) {
@@ -617,32 +608,9 @@ private:
 			const uint64_t value = maskedValue(board, cells);
 			if (value <= bestValue) continue;
 			bestValue = value;
-			best = { (cells & ONES) << 7, ((cells >> 4) & ONES) << 7, addend, layout, cells };
+			best = { (cells & ONES) << 7, ((cells >> 4) & ONES) << 7, addend, layout };
 		}
-		if (best.cells != 0) return best;
-
-		// No pattern holds every large tile any more. The old behaviour returned
-		// an empty formation here, and intact() is always true for one - so the
-		// constraint switched itself off for the rest of the game and the big
-		// tiles were then free to drift. Instead, keep the pattern that covers
-		// the most large tiles as a soft anchor: it never filters a move (even
-		// and odd stay zero), but leafValue() subtracts a penalty for every
-		// large tile that sits off it, which is a gradient back to the snake
-		// rather than a wall.
-		const uint64_t large = largeTiles(board);
-		uint64_t bestMask = 0;
-		int bestCover = 0;
-		uint64_t coverValue = 0;
-		for (uint64_t cells : FORMATIONS) {
-			const int cover = std_popcount(large & cells);
-			const uint64_t value = maskedValue(board, cells);
-			if (cover < bestCover) continue;
-			if (cover == bestCover && value <= coverValue) continue;
-			bestCover = cover;
-			coverValue = value;
-			bestMask = cells;
-		}
-		return Formation{ 0, 0, 0, layout, bestMask };
+		return best;
 	}
 
 	static inline uint64_t emptyPos(uint64_t b) {
@@ -823,9 +791,6 @@ private:
 					}
 					prev = rank;
 				}
-				if (i > 0) {
-					const int d = (int)line[i] - (int)line[i - 1];
-				}
 			}
 			if (counter > 0) merges += 1 + counter;
 
@@ -972,11 +937,6 @@ private:
 			const std::size_t i = hashBits(board, m_cache->bits);
 			const Slot old = loadSlot(i);
 			if (old.key == k && old.depth >= (uint32_t)depth) return;
-			// Depth-preferred replacement: a slot holding a much deeper value is
-			// worth more than the shallow value being stored, because only a deep
-			// entry can answer a deep query. The two-ply slack keeps the table
-			// from freezing on one move's deep entries.
-			if (m_ttPolicy == 1 && old.key != k && (int)old.depth > (int)depth + 1) return;
 			storeSlot(i, v);
 			return;
 		}
@@ -1120,40 +1080,19 @@ private:
 		return depth;
 	}
 
-	// Formation pruning is off by default. 2048 is a chance node model: the
-	// value of a position is the average over every spawn, so dropping legal
-	// directions because they break a pattern is not a heuristic - it deletes
-	// part of the expectation and the search stops seeing the trap it is in.
-	// Measured on forty seeds: pruning on 46% reach 32768 at 1774 s/game,
-	// pruning off 60% at 909 s/game. The knobs stay for experiments.
-	bool  m_ignoreFormation = true;
-	// Penalty per large tile outside the formation anchor (soft anchor). Off for
-	// the same reason.
-	float m_formPenalty = 0.0f;
+	bool m_ignoreFormation = false;
 	int   m_pruneDepth  = 0;
 	bool  m_ttDeep      = true;
 	int   m_ttWays      = 1;    // slots per hash bucket; 2 measured no gain
 	int   m_ttSlack     = 0;    // accept entries up to N plies shallower
-	int   m_ttPolicy    = 0;    // 0 = overwrite, 1 = keep a much deeper foreign slot
 	nt::Net* m_net      = nullptr;   // non-null: score with the trained network
 
 	std::mutex m_mutex;
 
-	// Leaf value. The formation anchor is applied here rather than as a move
-	// filter: a filter makes a crowded node return 0 when the only legal move
-	// breaks the pattern, which the search reads as certain death.
-	__forceinline float leafValue(uint64_t board, const Formation& f) const {
-		float v = evaluate(board);
-		if (m_formPenalty > 0.0f && f.cells != 0) {
-			v -= m_formPenalty * (float)std_popcount(largeTiles(board) & ~f.cells);
-		}
-		return v;
-	}
-
 	__forceinline float expectNode(uint64_t board, uint8_t depth, const Formation& f,
 	                               float prob) {
 		++m_prof.searchNodes;
-		if (depth == 0) return leafValue(board, f);
+		if (depth == 0) return evaluate(board);
 
 		float cached = 0;
 		if (cacheQuery(board, depth, cached)) {
@@ -1220,7 +1159,7 @@ private:
 	__forceinline float expectShard(uint64_t board, uint8_t depth, const Formation& f,
 	                                int shard, int nShards) {
 		++m_prof.searchNodes;
-		if (depth == 0) return leafValue(board, f);
+		if (depth == 0) return evaluate(board);
 
 		uint64_t mask = emptyPos(board);
 		const float total = (float)std_popcount(mask);

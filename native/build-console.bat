@@ -38,10 +38,3 @@ if errorlevel 1 (
   exit /b 1
 )
 echo [ok] build\%OUT%.exe
-
-rem Keep the exported copy in sync (skip silently if it is locked or missing)
-if "%OUT%"=="2048ai" if exist "new__2048__ai" (
-  copy /y "build\2048ai.exe" "new__2048__ai\liu 2048ai.exe" >nul 2>&1
-  copy /y "console\main.cpp" "new__2048__ai\liu 2048ai.cpp" >nul 2>&1
-  copy /y "src\solver\Solver4x4.h" "new__2048__ai\solver\Solver4x4.h" >nul 2>&1
-)

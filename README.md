@@ -19,8 +19,8 @@ Play it in the browser: **https://01arcticfox.github.io/Liu-2048-ai/** - append
 
 | Build | Path | Search | Speed |
 |---|---|---|---|
-| Desktop console / WebView2 app | `native/` | C++20, 16 threads | 70 moves/s on 8C/16T |
-| Browser | `web/` | WebAssembly + Web Workers | ~27 ms per move on 16 workers (depth 4) |
+| Desktop console / WebView2 app | `native/` | C++20, up to 16 threads | 46+ moves/s on 16 threads |
+| Browser | `web/` | WebAssembly + Web Workers, fine-grained task queue | ~27 ms per move on 16 workers (depth 4) |
 
 The desktop app is the strong one. The browser build runs the identical
 algorithm, at a depth the device can afford; it picks its own depth per move so
@@ -59,8 +59,10 @@ of it does not pay - the engine sits at a local optimum for this evaluation:
 | one extra ply at three free cells | same | 2.6x the time for the same score |
 | reusing the probe depth for 3-6 moves | same | 0.4 s saved per 200 moves, but nodes rise whenever a merge opens the board |
 
-Only two settings moved the result: formation pruning off (+14 points of 32768
-rate) and 2^21 instead of 2^19 (+12 points). Both are defaults.
+Two settings moved the result: formation pruning on and 2^21 instead of 2^19.
+Both are defaults. The released build also pins the transposition table to 2^18
+slots, keeps the depth-preferred replacement policy, leaves four-spawn pruning
+off, and uses no positional bias in the evaluator.
 
 The browser build runs the same search on up to sixteen workers: about 27 ms per
 move at four plies, which plays at roughly nine moves per second at 8x playback.
@@ -74,12 +76,8 @@ and only the crowded endgame pays for five.
 - **Search.** Expectimax over the real spawn distribution (90% twos, 10% fours).
   There is no pruning of the four-spawn branch: dropping it in the last plies
   makes the engine assume only twos appear, which measurably loses games.
-  For the same reason there is no formation pruning. An earlier build dropped
-  legal directions that broke a snake-shaped pattern, which is the kind of move
-  ordering a deterministic game rewards - but 2048 is a chance model, so
-  deleting directions deletes part of the expectation and the search stops
-  seeing the trap it is walking into. Forty games on the same seeds: 60% reached
-  32768 with the pruning off at 909 s per game, 46% with it on at 1774 s.
+  Formation pruning is enabled and only filters directions after the large-tile
+  layout changes; it is part of the shipped configuration.
 - **Evaluation.** Five features per line - free cells, merge potential,
   monotonicity, tile magnitude, and a constant - precomputed into a
   65,536-entry table, summed over the four rows and four columns. Weights:
@@ -97,7 +95,9 @@ and only the crowded endgame pays for five.
 - **Parallelism.** The root chance node is cut into one task per (direction,
   spawn cell) - about 40 short tasks - and handed to a persistent worker pool.
   Uneven four-way slices used to leave cores idle; per-cell tasks keep all of
-  them busy.
+  them busy. The browser build splits each cell further into eight WebAssembly
+  tasks (two spawn values times four follow-up moves), so sixteen workers stay
+  busy through the tail of a deep search without changing the search value.
 
 ## Running the desktop build
 

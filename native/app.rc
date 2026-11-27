@@ -6,7 +6,7 @@
 // 2000       WebView2Loader.dll, so the loader does not have to be shipped beside
 //            the exe (the WebView2 *runtime* itself still comes from Windows)
 
-1000 RCDATA "web\\index.html"
-1001 RCDATA "web\\app.css"
-1002 RCDATA "web\\app.js"
+1000 RCDATA "..\\web\\index.html"
+1001 RCDATA "..\\web\\app.css"
+1002 RCDATA "..\\web\\app.js"
 2000 RCDATA "third_party\\WebView2\\x64\\WebView2Loader.dll"

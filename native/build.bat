@@ -44,7 +44,7 @@ if errorlevel 1 goto :fail
 
 echo [3/4] staging assets...
 if exist "%OUT%\web" rmdir /s /q "%OUT%\web"
-xcopy /E /I /Y /Q "%~dp0web" "%OUT%\web" >nul
+xcopy /E /I /Y /Q "%~dp0..\web" "%OUT%\web" >nul
 copy /Y "%WV2%\x64\WebView2Loader.dll" "%OUT%\" >nul
 
 echo [4/4] building self-test...

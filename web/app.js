@@ -130,8 +130,13 @@
     // as well - 8x played at four plies with no fifth ply in the endgame - which
     // made the strongest-looking setting the weakest player. Depth is a property
     // of the position, not of how fast the tiles are drawn.
+    // Ceiling five plies, but the fifth only when every direction leaves three
+    // cells or fewer. The old rule read the narrowest direction, so one crowded
+    // lane bought five plies while the rest of the board was wide open - and
+    // five plies on a wide board is a half-second freeze per move, measured as
+    // p95 502 ms against 58 ms with the pessimistic rule.
     const engine = window.LiuEngine;
-    if (engine && engine.setTuning) engine.setTuning(5, 5);
+    if (engine && engine.setTuning) engine.setTuning(5, 3);
 
     speedBtn.textContent = SPEEDS[speedIdx] + 'x';
     speedBtn.title = t('speedTitle') + ' · ' + SPEEDS[speedIdx] + 'x';
