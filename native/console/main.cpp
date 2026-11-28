@@ -147,7 +147,7 @@ struct Options {
     int           threads    = defaultThreads();   // search workers
     bool          noIntact   = false; // experiment: drop formation pruning
     int           prune4     = 0;     // 0 = both spawns, N = skip 4-spawn at depth <= N
-    float         hiMergeW   = 300;   // validated default; 0 restores the original heuristic
+    float         hiMergeW   = 0;     // original evaluator; 300,9 re-enables the A/B candidate
     int           hiRank     = 9;
 };
 

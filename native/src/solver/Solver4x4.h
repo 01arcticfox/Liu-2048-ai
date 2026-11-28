@@ -746,7 +746,7 @@ private:
 	// engine - its "merges" term only rewards exact equalities, so a row like
 	// 2 4 8 16 is scored the same as 2 64 8 16 although the first one can still be
 	// merged into a chain.
-	float m_wHiMerge = 300.0f;  // validated default (--himerge 0,9 restores the old table)
+	float m_wHiMerge = 0.0f;    // restored to original evaluator; --himerge 300,9 re-enables the A/B candidate
 	int   m_hiRank   = 9;
 	float m_wEmpty  = 270.0f;
 	float m_wMerges = 700.0f;

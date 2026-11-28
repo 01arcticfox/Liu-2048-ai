@@ -36,9 +36,11 @@ All numbers below are 40 independent games on one machine (Ryzen 7 8845H,
 | 2^19 | 4.5 plies | 19/40 (48%) | **452,860** | 398,237 |
 | **2^21 (default)** | **5.2 plies** | **24/40 (60%)** | **452,861** | **415,992** |
 
-The default evaluator also gives a rank-weighted bonus to merges between large
-tiles (`--himerge 300,9`). A paired 16-game run raised the average score from
-525,374 to 544,612 while leaving the 32768 hit count at 7/16; the A/B data is in
+The default evaluator is the original analytic table. A rank-weighted bonus to
+merges between large tiles (`--himerge 300,9`) was evaluated as an optional A/B
+candidate: a 16-game run raised the average score from 525,374 to 544,612 but did
+not improve the 32768 hit rate, and at high ranks its score scale drifts. It is
+therefore **off by default**; pass `--himerge 300,9` to opt in. The A/B data is in
 the project's draft tuning report.
 
 Both budgets land within one point of each other at 32768, which is expected: the
