@@ -295,6 +295,17 @@ public:
 	void shape(float out[2]) const { out[0] = m_sumExp; out[1] = m_monoExp; }
 
 	void setPrune4(int level) { std::lock_guard<std::mutex> lk(m_mutex); m_pruneDepth = level; }
+	// Extra reward for merges between large tiles. Unlike a fixed shape this
+	// imposes no corridor: it simply makes two 8192 tiles more attractive than
+	// two 32 tiles, which is what building a second 32768 requires.
+	void setHiMerge(float w, int threshold) {
+		std::lock_guard<std::mutex> lk(m_mutex);
+		m_wHiMerge = w;
+		m_hiRank = std::clamp(threshold, 1, 14);
+		rebuildFeatures();
+		rebuildScoreTable();
+	}
+
 
 	// Accept transposition entries that were searched deeper than the request.
 	void setTtDeep(bool on) { std::lock_guard<std::mutex> lk(m_mutex); m_ttDeep = on; }
@@ -719,7 +730,7 @@ private:
 	// tunable at runtime (see bench/tune.sh).
 	// Heap allocated: five 256 KB arrays on top of the score table would push the
 	// object past the default 1 MB thread stack and kill the process at start-up.
-	std::unique_ptr<float[]> m_fEmpty, m_fMerges, m_fMono, m_fSum;
+	std::unique_ptr<float[]> m_fEmpty, m_fMerges, m_fMono, m_fSum, m_fHiMerge;
 	float m_sumPow[16];
 	float m_monoPow[16];
 
@@ -735,6 +746,8 @@ private:
 	// engine - its "merges" term only rewards exact equalities, so a row like
 	// 2 4 8 16 is scored the same as 2 64 8 16 although the first one can still be
 	// merged into a chain.
+	float m_wHiMerge = 300.0f;  // validated default (--himerge 0,9 restores the old table)
+	int   m_hiRank   = 9;
 	float m_wEmpty  = 270.0f;
 	float m_wMerges = 700.0f;
 	float m_wMono   = 47.0f;
@@ -744,6 +757,7 @@ private:
 		m_fMerges.reset(new float[MAX_ROW]);
 		m_fMono  .reset(new float[MAX_ROW]);
 		m_fSum   .reset(new float[MAX_ROW]);
+		m_fHiMerge.reset(new float[MAX_ROW]);
 
 		buildPowTables();
 		rebuildFeatures();
@@ -775,7 +789,8 @@ private:
 
 			float sum = 0;
 			int   empty = 0, merges = 0;
-			int   prev = 0, counter = 0;
+			int   prev = 0, counter = 0, runRank = 0;
+			float hiMerge = 0;
 
 			for (int i = 0; i < 4; ++i) {
 				const int rank = line[i];
@@ -785,14 +800,22 @@ private:
 				} else {
 					if (prev == rank) {
 						counter += 1;
-					} else if (counter > 0) {
-						merges += 1 + counter;
+					} else {
+						if (counter > 0) {
+							merges += 1 + counter;
+							if (runRank >= m_hiRank)
+								hiMerge += (float)(1 + counter) * (runRank - m_hiRank + 1);
+						}
 						counter = 0;
+						runRank = rank;
 					}
 					prev = rank;
 				}
 			}
-			if (counter > 0) merges += 1 + counter;
+			if (counter > 0) {
+				merges += 1 + counter;
+				if (runRank >= m_hiRank) hiMerge += (float)(1 + counter) * (runRank - m_hiRank + 1);
+			}
 
 			float monoLeft = 0, monoRight = 0;
 			for (int i = 1; i < 4; ++i) {
@@ -806,6 +829,7 @@ private:
 			m_fMerges[row] = (float)merges;
 			m_fMono[row]   = std::min(monoLeft, monoRight);
 			m_fSum[row]    = sum;
+			m_fHiMerge[row] = hiMerge;
 		}
 	}
 
@@ -815,12 +839,14 @@ private:
 				+ m_wEmpty  * m_fEmpty[row]
 				+ m_wMerges * m_fMerges[row]
 				- m_wMono   * m_fMono[row]
-				- m_wSum    * m_fSum[row];
+				- m_wSum    * m_fSum[row]
+				+ m_wHiMerge * m_fHiMerge[row];
 			m_scoreTable2[row] = 200000.0f
 				+ m_w2Empty  * m_fEmpty[row]
 				+ m_w2Merges * m_fMerges[row]
 				- m_w2Mono   * m_fMono[row]
-				- m_w2Sum    * m_fSum[row];
+				- m_w2Sum    * m_fSum[row]
+				+ m_wHiMerge * m_fHiMerge[row];
 		}
 	}
 

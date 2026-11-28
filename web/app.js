@@ -936,6 +936,9 @@
   /* ------------------------------------------------ startup */
   function startGame() {
     post('NEW');
+    // The browser pool keeps its transposition tables across games; reset them
+    // here so a new game starts from the same engine state as a fresh page.
+    if (window.LiuEngine && window.LiuEngine.reset) window.LiuEngine.reset();
     cancelStep();
     token++;
     gameOver = false;

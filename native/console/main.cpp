@@ -147,6 +147,8 @@ struct Options {
     int           threads    = defaultThreads();   // search workers
     bool          noIntact   = false; // experiment: drop formation pruning
     int           prune4     = 0;     // 0 = both spawns, N = skip 4-spawn at depth <= N
+    float         hiMergeW   = 300;   // validated default; 0 restores the original heuristic
+    int           hiRank     = 9;
 };
 
 // Runtime preferences, changed by the number keys while playing
@@ -2116,6 +2118,7 @@ void printUsage() {
         "  --show          draw the board even when output is redirected\n"
         "  --threads N     search workers, 1-16 (default: every logical core)\n"
         "  --prune4 [N]    skip the 4-spawn branch at depth <= N (default 0 = never)\n"
+        "  --himerge W,T   reward large-tile merges: weight W, rank threshold T (default 300,9)\n"
         "                  non-zero makes play non-reproducible and is not recommended)\n"
         "  --hash N        transposition table slots = 2^N (default 18 = 4 MB)\n"
         "  --probe N       depth probe may materialise at most 2^N boards\n"
@@ -2177,6 +2180,12 @@ bool parseArgs(int argc, char** argv, Options& opt) {
         else if (a == "--startpos") { if (i + 1 < argc) opt.startPos = argv[++i]; }
         else if (a == "--snapat")   { std::uint64_t v; if (value(v)) opt.snapAt = (int)v; }
         else if (a == "--snapfile") { if (i + 1 < argc) opt.snapPath = argv[++i]; }
+        else if (a == "--himerge") {
+            const char* c = argv[++i];
+            opt.hiMergeW = std::strtof(c, nullptr);
+            c = std::strchr(c, ',');
+            if (c) opt.hiRank = std::atoi(c + 1);
+        }
         else if (a == "--prune4") {
             std::uint64_t v = 1;
             if (i + 1 < argc) { std::uint64_t t = 0; if (parseU64(argv[i + 1], t)) { v = t; ++i; } }
@@ -2299,6 +2308,7 @@ int main(int argc, char** argv) {
     solver.setBudget(opt.budget ? opt.budget : autoBudget(nThreads));
     solver.setIgnoreFormation(opt.noIntact);
     solver.setPrune4(opt.prune4);
+    solver.setHiMerge(opt.hiMergeW, opt.hiRank);
     solver.setTtDeep(opt.ttDeep != 0);
     solver.setTtWays(opt.ttWays);
     solver.setTtSlack(opt.ttSlack);
@@ -2378,6 +2388,7 @@ int main(int argc, char** argv) {
         sv->setBudget(1024);
         sv->setIgnoreFormation(opt.noIntact);
         sv->setPrune4(opt.prune4);
+        sv->setHiMerge(opt.hiMergeW, opt.hiRank);
         sv->setTtDeep(opt.ttDeep != 0);
         sv->setTtWays(opt.ttWays);
         sv->setTtSlack(opt.ttSlack);

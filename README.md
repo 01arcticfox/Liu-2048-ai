@@ -20,7 +20,7 @@ Play it in the browser: **https://01arcticfox.github.io/Liu-2048-ai/** - append
 | Build | Path | Search | Speed |
 |---|---|---|---|
 | Desktop console / WebView2 app | `native/` | C++20, up to 16 threads | 46+ moves/s on 16 threads |
-| Browser | `web/` | WebAssembly + Web Workers, fine-grained task queue | ~27 ms per move on 16 workers (depth 4) |
+| Browser | `web/` | WebAssembly + Web Workers, coarse per-cell tasks | ~27 ms per move on 16 workers (depth 4) |
 
 The desktop app is the strong one. The browser build runs the identical
 algorithm, at a depth the device can afford; it picks its own depth per move so
@@ -35,6 +35,11 @@ All numbers below are 40 independent games on one machine (Ryzen 7 8845H,
 |---|---|---|---|
 | 2^19 | 4.5 plies | 19/40 (48%) | **452,860** | 398,237 |
 | **2^21 (default)** | **5.2 plies** | **24/40 (60%)** | **452,861** | **415,992** |
+
+The default evaluator also gives a rank-weighted bonus to merges between large
+tiles (`--himerge 300,9`). A paired 16-game run raised the average score from
+525,374 to 544,612 while leaving the 32768 hit count at 7/16; the A/B data is in
+the project's draft tuning report.
 
 Both budgets land within one point of each other at 32768, which is expected: the
 score is a function of the tile chain, so reaching 32768 always pays about
@@ -98,6 +103,10 @@ and only the crowded endgame pays for five.
   them busy. The browser build splits each cell further into eight WebAssembly
   tasks (two spawn values times four follow-up moves), so sixteen workers stay
   busy through the tail of a deep search without changing the search value.
+  The browser now cuts each cell into only two WebAssembly tasks (one per spawn
+  value); each task evaluates all four follow-up moves internally. That reduces
+  queue traffic fourfold - 128 to 32 tasks per move - and measured 220 ms to
+  66 ms per move in an eight-worker harness, with identical scores.
 
 ## Running the desktop build
 
