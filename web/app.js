@@ -44,6 +44,7 @@
       kept: '终局已保留 · 按方向键开新局',
       overText: (m, s) => `最大方块 ${m} · 得分 ${s}`,
       win: '32768 达成', winBtn: '确定',
+      rush: '已合成 32768 · 继续冲刺更高分',
       winText: '已经拼出 2¹⁵，继续冲击 2¹⁶？',
       toLight: '切换浅色主题', toDark: '切换深色主题', langTitle: 'Switch to English',
       speedTitle: 'AI 速度',
@@ -62,6 +63,7 @@
       kept: 'Final board kept · an arrow key starts a new game',
       overText: (m, s) => `Max tile ${m} · Score ${s}`,
       win: '32768 Reached', winBtn: 'OK',
+      rush: '32768 built · pushing for more',
       winText: 'The AI built 2¹⁵ — go for 2¹⁶?',
       toLight: 'Light theme', toDark: 'Dark theme', langTitle: '切换到中文',
       speedTitle: 'AI speed',
@@ -621,12 +623,11 @@
     for (const tile of tiles.values()) if (tile.value > maxTile) maxTile = tile.value;
     saveState();
 
+    // 32768 is a milestone, not an ending: the board stays live and the search
+    // keeps its transposition table, so the run continues straight towards 65536.
     if (maxTile >= 32768 && !reachedGoal) {
       reachedGoal = true;
-      ui.overlay = { kind: 'win', max: maxTile, score };
-      overlay.hidden = false;
-      renderOverlay();
-      return;
+      toast(t('rush'), 4200);
     }
 
     if (!canMove()) {
@@ -649,11 +650,11 @@
   }
 
   let toastTimer = 0;
-  function toast(msg) {
+  function toast(msg, ms) {
     toastEl.textContent = msg;
     toastEl.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1900);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), ms || 1900);
   }
 
   let hintTimer = 0;
