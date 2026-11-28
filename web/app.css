@@ -38,6 +38,8 @@
   --score-fg: #dcecff;
 
   --overlay-bg: rgba(4, 9, 20, 0.76);
+  --keep-card-bg: linear-gradient(160deg, rgba(16, 34, 64, 0.95), rgba(7, 14, 28, 0.96));
+  --keep-card-bg: linear-gradient(160deg, rgba(16, 34, 64, 0.95), rgba(7, 14, 28, 0.96));
   --toast-bg: rgba(10, 24, 46, 0.92);
   --toast-fg: #dcecff;
 
@@ -83,6 +85,8 @@ html[data-theme="light"] {
   --score-fg: #123a6d;
 
   --overlay-bg: rgba(238, 245, 255, 0.82);
+  --keep-card-bg: linear-gradient(160deg, rgba(252, 254, 255, 0.97), rgba(232, 242, 255, 0.97));
+  --keep-card-bg: linear-gradient(160deg, rgba(252, 254, 255, 0.97), rgba(232, 242, 255, 0.97));
   --toast-bg: rgba(255, 255, 255, 0.96);
   --toast-fg: #12365f;
 
@@ -536,6 +540,22 @@ html[data-theme="light"] .hint .chev {
 .overlay[hidden] { display: none; }
 
 /* 终局：不模糊，玩家要能看清最后落成的盘面 */
+.overlay.keep .ov-card {
+  background: var(--keep-card-bg);
+  border: 1px solid var(--panel-brd);
+  border-radius: 18px;
+  padding: 16px 26px 18px;
+  box-shadow: 0 20px 44px -24px rgba(0, 0, 0, 0.9);
+}
+
+.overlay.keep .ov-card {
+  background: var(--keep-card-bg);
+  border: 1px solid var(--panel-brd);
+  border-radius: 18px;
+  padding: 16px 26px 18px;
+  box-shadow: 0 20px 44px -24px rgba(0, 0, 0, 0.9);
+}
+
 .overlay.keep {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
