@@ -318,11 +318,24 @@ static void EnsureAssets() {
     const std::wstring web = dir + L"\\web";
     CreateDirectoryW(dir.c_str(), nullptr);
     CreateDirectoryW(web.c_str(), nullptr);
+    CreateDirectoryW((web + L"\\wasm").c_str(), nullptr);
 
-    struct Item { int id; const wchar_t* name; };
-    const Item items[] = {{1000, L"index.html"}, {1001, L"app.css"}, {1002, L"app.js"}};
+    // The engine ships as a WebAssembly worker pool, so engine.js, ai-worker.js
+    // and wasm/solver.wasm have to be unpacked too; with only the three UI files
+    // the single-file build starts and then never makes a move.
+    struct Item { int id; const wchar_t* name; const wchar_t* sub; };
+    const Item items[] = {
+        {1000, L"index.html",   L""},
+        {1001, L"app.css",      L""},
+        {1002, L"app.js",       L""},
+        {1003, L"engine.js",    L""},
+        {1004, L"ai-worker.js", L""},
+        {1005, L"solver.wasm",  L"wasm"},
+    };
     for (const auto& it : items) {
-        const std::wstring path = web + L"\\" + it.name;
+        std::wstring path = web + L"\\";
+        if (it.sub[0]) { path += it.sub; path += L"\\"; }
+        path += it.name;
         const HRSRC hr = FindResourceW(nullptr, MAKEINTRESOURCEW(it.id), RT_RCDATA);
         if (!hr) continue;
         const DWORD want = SizeofResource(nullptr, hr);

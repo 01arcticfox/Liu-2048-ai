@@ -11,7 +11,7 @@
 
 (function (global) {
   const MAX_WORKERS = 16;
-  const VERSION = '11';
+  const VERSION = '12';
   const FORM_W = 0, FORM_T = 9;     // original evaluator; 300,9 re-enables the A/B candidate
   const query = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 

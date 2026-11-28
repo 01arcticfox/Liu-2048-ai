@@ -535,6 +535,16 @@ html[data-theme="light"] .hint .chev {
 }
 .overlay[hidden] { display: none; }
 
+/* 终局：不模糊，玩家要能看清最后落成的盘面 */
+.overlay.keep {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: linear-gradient(180deg, rgba(4, 9, 20, 0.28), rgba(4, 9, 20, 0.52));
+}
+html[data-theme="light"] .overlay.keep {
+  background: linear-gradient(180deg, rgba(238, 245, 255, 0.3), rgba(226, 238, 252, 0.55));
+}
+
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 .ov-card { text-align: center; padding: 20px; }

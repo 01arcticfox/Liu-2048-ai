@@ -2,11 +2,16 @@
 // single file. On first run the payload is written to %LOCALAPPDATA%\2048AIBlue
 // and pointed at from there; nothing has to sit next to the exe.
 //
-// 1000-1002  the web UI (index.html, app.css, app.js)
+// 1000-1005  the web UI (index.html, app.css, app.js, engine.js, ai-worker.js,
+//            wasm solver). The browser build runs its search in a WebAssembly
+//            worker pool, so a single-file distribution needs those three too.
 // 2000       WebView2Loader.dll, so the loader does not have to be shipped beside
 //            the exe (the WebView2 *runtime* itself still comes from Windows)
 
 1000 RCDATA "..\\web\\index.html"
 1001 RCDATA "..\\web\\app.css"
 1002 RCDATA "..\\web\\app.js"
+1003 RCDATA "..\\web\\engine.js"
+1004 RCDATA "..\\web\\ai-worker.js"
+1005 RCDATA "..\\web\\wasm\\solver.wasm"
 2000 RCDATA "third_party\\WebView2\\x64\\WebView2Loader.dll"

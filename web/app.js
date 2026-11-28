@@ -41,6 +41,7 @@
       needDesktop: 'AI 引擎需要桌面版（WebView2）运行',
       noUndo: '没有可撤销的步骤', undone: '已撤销', stuck: 'AI 无法继续',
       over: 'GAME OVER', again: '确定',
+      kept: '终局已保留 · 按方向键开新局',
       overText: (m, s) => `最大方块 ${m} · 得分 ${s}`,
       win: '32768 达成', winBtn: '确定',
       winText: '已经拼出 2¹⁵，继续冲击 2¹⁶？',
@@ -58,6 +59,7 @@
       needDesktop: 'AI engine runs in the desktop app (WebView2)',
       noUndo: 'Nothing to undo', undone: 'Undone', stuck: 'AI stalled',
       over: 'GAME OVER', again: 'OK',
+      kept: 'Final board kept · an arrow key starts a new game',
       overText: (m, s) => `Max tile ${m} · Score ${s}`,
       win: '32768 Reached', winBtn: 'OK',
       winText: 'The AI built 2¹⁵ — go for 2¹⁶?',
@@ -91,6 +93,7 @@
   let queuedDir = -1;        // one slot of lookahead for human input
   let token = 0;
   let gameOver = false;
+  let pendingRestart = false;   // 终局遮罩已关闭、盘面仍保留，等下一次输入再开新局
   let reachedGoal = false;
 
   let autoOn = false;
@@ -229,6 +232,7 @@
     $('#ovTitle').textContent = t(o.kind === 'win' ? 'win' : 'over');
     $('#ovText').textContent = o.kind === 'win' ? t('winText') : t('overText', o.max, fmt(o.score));
     $('#ovBtn').textContent = t(o.kind === 'win' ? 'winBtn' : 'again');
+    overlay.classList.toggle('keep', o.kind === 'over');
   }
 
   function applyLang() {
@@ -747,7 +751,10 @@
   // builds a backlog. Every slide is drawn, which is the rhythm the mature 2048
   // pages have and the reason fast play stops feeling jumpy.
   function doMove(dir) {
-    if (gameOver) return;
+    if (gameOver) {
+      if (!pendingRestart) return;
+      startGame();               // 保留的最后盘面到此为止，这一手落在新局上
+    }
     if (autoOn) setAuto(false);
     if (animating) { queuedDir = dir; return; }
     move(dir);
@@ -820,12 +827,21 @@
   $('#newGame').addEventListener('click', () => startGame());
 
   autoBtn.addEventListener('click', () => {
-    if (gameOver) return;
+    if (gameOver) {
+      if (!pendingRestart) return;
+      startGame();
+      setAuto(true);
+      return;
+    }
     setAuto(!autoOn);
   });
 
   $('#hintBtn').addEventListener('click', () => {
     if (autoOn) setAuto(false);
+    if (gameOver) {
+      if (!pendingRestart) return;
+      startGame();
+    }
     askAI('hint');
   });
 
@@ -860,9 +876,17 @@
   overlay.addEventListener('pointerdown', (e) => e.stopPropagation());
 
   // Dismiss only. The finished board is what the player just achieved, so the
-  // overlay closes over it instead of throwing it away; a new game is one press
-  // of Restart.
-  $('#ovBtn').addEventListener('click', () => hideOverlay());
+  // overlay closes over it instead of throwing it away. After a game over the
+  // board stays exactly as it ended; the next direction key (or Restart) begins
+  // a new game.
+  $('#ovBtn').addEventListener('click', () => {
+    const kind = ui.overlay ? ui.overlay.kind : null;
+    hideOverlay();
+    if (kind === 'over') {
+      pendingRestart = true;
+      toast(t('kept'));
+    }
+  });
 
   langBtn.addEventListener('click', () => {
     lang = lang === 'zh' ? 'en' : 'zh';
@@ -942,6 +966,7 @@
     cancelStep();
     token++;
     gameOver = false;
+    pendingRestart = false;
     reachedGoal = false;
     history = [];
     score = 0;
